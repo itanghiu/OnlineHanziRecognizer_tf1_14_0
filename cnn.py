@@ -4,12 +4,11 @@ import random
 import tensorflow.contrib.slim as slim
 import time
 import logging
-import numpy as np
 import tensorflow as tf
 import pickle
 from PIL import Image
+import utils
 from tensorflow.python.ops import control_flow_ops
-
 
 logger = logging.getLogger('Training a chinese write char recognition')
 logger.setLevel(logging.INFO)
@@ -17,34 +16,32 @@ logger.setLevel(logging.INFO)
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 logger.addHandler(ch)
-
+data_root_dir = 'C:/DATA/CASIA/chinese-character-recognition-data'
 
 tf.app.flags.DEFINE_boolean('random_flip_up_down', False, "Whether to random flip up down")
 tf.app.flags.DEFINE_boolean('random_brightness', True, "whether to adjust brightness")
 tf.app.flags.DEFINE_boolean('random_contrast', True, "whether to random constrast")
+tf.app.flags.DEFINE_boolean('gray', True, "whether to change the rbg to gray")
+tf.app.flags.DEFINE_boolean('restore', False, 'whether to restore from checkpoint')
 
 tf.app.flags.DEFINE_integer('charset_size', 3755, "Choose the first `charset_size` characters only.")
 tf.app.flags.DEFINE_integer('image_size', 64, "Needs to provide same value as in training.")
-tf.app.flags.DEFINE_boolean('gray', True, "whether to change the rbg to gray")
 tf.app.flags.DEFINE_integer('max_steps', 16002, 'the max training steps ')
 tf.app.flags.DEFINE_integer('eval_steps', 100, "the step num to eval")
 tf.app.flags.DEFINE_integer('save_steps', 500, "the steps to save")
+tf.app.flags.DEFINE_integer('epoch', 1, 'Number of epoches')
+tf.app.flags.DEFINE_integer('batch_size', 128, 'Validation batch size')
 
-tf.app.flags.DEFINE_string('checkpoint_dir', './checkpoint/', 'the checkpoint dir')
-tf.app.flags.DEFINE_string('train_data_dir', '../data/train/', 'the train dataset dir')
-tf.app.flags.DEFINE_string('test_data_dir', '../data/test/', 'the test dataset dir')
+tf.app.flags.DEFINE_string('train_data_dir', data_root_dir + '/train/', 'the train dataset dir')
+tf.app.flags.DEFINE_string('test_data_dir', data_root_dir + '/test/', 'the test dataset dir')
 tf.app.flags.DEFINE_string('log_dir', './log', 'the logging dir')
-
-tf.app.flags.DEFINE_boolean('restore', False, 'whether to restore from checkpoint')
-tf.app.flags.DEFINE_boolean('epoch', 1, 'Number of epoches')
-tf.app.flags.DEFINE_boolean('batch_size', 128, 'Validation batch size')
 tf.app.flags.DEFINE_string('mode', 'validation', 'Running mode. One of {"train", "valid", "test"}')
-
 gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
 FLAGS = tf.app.flags.FLAGS
 
 
 class DataIterator:
+
     def __init__(self, data_dir):
         # Set FLAGS.charset_size to a small value if available computation power is limited.
         truncate_path = data_dir + ('%05d' % FLAGS.charset_size)
@@ -54,7 +51,13 @@ class DataIterator:
             if root < truncate_path:
                 self.image_names += [os.path.join(root, file_path) for file_path in file_list]
         random.shuffle(self.image_names)
-        self.labels = [int(file_name[len(data_dir):].split(os.sep)[0]) for file_name in self.image_names]
+        # the labels are the name of directories converted to int
+        # self.labels = [int(file_name[len(data_dir):].split(os.sep)[0]) for file_name in self.image_names]
+        i = 0
+        for file_name in self.image_names:
+            file_name0 = file_name[len(data_dir):].split(os.sep)[0]
+            self.labels[i] = int(file_name0)
+            i = i + 1
 
     @property
     def size(self):
@@ -93,7 +96,8 @@ def build_graph(top_k):
     images = tf.placeholder(dtype=tf.float32, shape=[None, 64, 64, 1], name='image_batch')
     labels = tf.placeholder(dtype=tf.int64, shape=[None], name='label_batch')
     is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
-    with tf.device('/gpu:0'):
+    # with tf.device('/gpu:0'):
+    with tf.device('/cpu:0'):
         with slim.arg_scope([slim.conv2d, slim.fully_connected],
                             normalizer_fn=slim.batch_norm,
                             normalizer_params={'is_training': is_training}):
@@ -149,17 +153,19 @@ def build_graph(top_k):
 
 def train():
     print('Begin training')
-    train_feeder = DataIterator(data_dir='../data/train/')
-    test_feeder = DataIterator(data_dir='../data/test/')
+    train_feeder = DataIterator(data_dir=data_root_dir + '/train/')
+    test_feeder = DataIterator(data_dir=data_root_dir + '/test/')
     model_name = 'chinese-rec-model'
-    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True)) as sess:
+    # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
+    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True,
+                                          log_device_placement=True)) as sess:
         train_images, train_labels = train_feeder.input_pipeline(batch_size=FLAGS.batch_size, aug=True)
         test_images, test_labels = test_feeder.input_pipeline(batch_size=FLAGS.batch_size)
         graph = build_graph(top_k=1)
         saver = tf.train.Saver()
         sess.run(tf.global_variables_initializer())
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+        coordinator = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coordinator)
 
         train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train', sess.graph)
         test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/val')
@@ -171,10 +177,10 @@ def train():
                 print("restore from the checkpoint {0}".format(ckpt))
                 start_step += int(ckpt.split('-')[-1])
 
-        logger.info(':::Training Start:::')
+        logger.info('----- Training Start -----')
         try:
             i = 0
-            while not coord.should_stop():
+            while not coordinator.should_stop():
                 i += 1
                 start_time = time.time()
                 train_images_batch, train_labels_batch = sess.run([train_images, train_labels])
@@ -212,14 +218,13 @@ def train():
             logger.info('==================Train Finished================')
             saver.save(sess, os.path.join(FLAGS.checkpoint_dir, model_name), global_step=graph['global_step'])
         finally:
-            coord.request_stop()
-        coord.join(threads)
+            coordinator.request_stop()
+        coordinator.join(threads)
 
 
 def validation():
     print('Begin validation')
-    test_feeder = DataIterator(data_dir='../data/test/')
-
+    test_feeder = DataIterator(data_dir=data_root_dir + '/test/')
     final_predict_val = []
     final_predict_index = []
     groundtruth = []
@@ -232,8 +237,8 @@ def validation():
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())  # initialize test_feeder's inside state
 
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+        coordinator = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coordinator)
 
         ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
         if ckpt:
@@ -241,10 +246,11 @@ def validation():
             print("restore from the checkpoint {0}".format(ckpt))
 
         logger.info(':::Start validation:::')
+        i = 0
+        acc_top_1 = 0.0
+        acc_top_k = 0.0
         try:
-            i = 0
-            acc_top_1, acc_top_k = 0.0, 0.0
-            while not coord.should_stop():
+            while not coordinator.should_stop():
                 i += 1
                 start_time = time.time()
                 test_images_batch, test_labels_batch = sess.run([test_images, test_labels])
@@ -252,18 +258,21 @@ def validation():
                              graph['labels']: test_labels_batch,
                              graph['keep_prob']: 1.0,
                              graph['is_training']: False}
-                batch_labels, probs, indices, acc_1, acc_k = sess.run([graph['labels'],
-                                                                       graph['predicted_val_top_k'],
-                                                                       graph['predicted_index_top_k'],
-                                                                       graph['accuracy'],
-                                                                       graph['accuracy_top_k']], feed_dict=feed_dict)
-                final_predict_val += probs.tolist()
+
+                batch_labels, probabilities, \
+                indices, acc_1, acc_k = sess.run([graph['labels'],
+                                                  graph['predicted_val_top_k'],
+                                                  graph['predicted_index_top_k'],
+                                                  graph['accuracy'],
+                                                  graph['accuracy_top_k']],
+                                                 feed_dict=feed_dict)
+                final_predict_val += probabilities.tolist()
                 final_predict_index += indices.tolist()
                 groundtruth += batch_labels.tolist()
                 acc_top_1 += acc_1
                 acc_top_k += acc_k
                 end_time = time.time()
-                logger.info("the batch {0} takes {1} seconds, accuracy = {2}(top_1) {3}(top_k)"
+                logger.info("The batch {0} took {1} seconds, accuracy = {2}(top_1) {3}(top_k)"
                             .format(i, end_time - start_time, acc_1, acc_k))
 
         except tf.errors.OutOfRangeError:
@@ -271,38 +280,65 @@ def validation():
             acc_top_1 = acc_top_1 * FLAGS.batch_size / test_feeder.size
             acc_top_k = acc_top_k * FLAGS.batch_size / test_feeder.size
             logger.info('top 1 accuracy {0} top k accuracy {1}'.format(acc_top_1, acc_top_k))
+
         finally:
-            coord.request_stop()
-        coord.join(threads)
+            coordinator.request_stop()
+            coordinator.join(threads)
     return {'prob': final_predict_val, 'indices': final_predict_index, 'groundtruth': groundtruth}
+
+
+def buildGraph(sess):
+    # images = tf.placeholder(dtype=tf.float32, shape=[None, 64, 64, 1])
+    # Pass a shadow label 0. This label will not affect the computation graph.
+    graph = build_graph(top_k=3)
+    saver = tf.train.Saver()
+    ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+    if ckpt:
+        saver.restore(sess, ckpt)
+    return graph, sess
 
 
 def inference(image):
     print('inference')
-    temp_image = Image.open(image).convert('L')
-    temp_image = temp_image.resize((FLAGS.image_size, FLAGS.image_size), Image.ANTIALIAS)
-    temp_image = np.asarray(temp_image) / 255.0
-    temp_image = temp_image.reshape([-1, 64, 64, 1])
-    with tf.Session() as sess:
-        logger.info('========start inference============')
-        # images = tf.placeholder(dtype=tf.float32, shape=[None, 64, 64, 1])
-        # Pass a shadow label 0. This label will not affect the computation graph.
-        graph = build_graph(top_k=3)
-        saver = tf.train.Saver()
-        ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
-        if ckpt:
-            saver.restore(sess, ckpt)
-        predict_val, predict_index = sess.run([graph['predicted_val_top_k'], graph['predicted_index_top_k']],
-                                              feed_dict={graph['images']: temp_image,
-                                                         graph['keep_prob']: 1.0,
-                                                         graph['is_training']: False})
-    return predict_val, predict_index
+    recognizer = get_predictor()
+    return recognizer(image)
+
+
+def get_predictor():
+    sess = tf.Session()
+    graph, sess = buildGraph(sess)
+
+    def recognizer(input_image):
+        resized_image = utils.resize_image(input_image, FLAGS.image_size, FLAGS.image_size)
+        predicted_probabilities, predicted_indexes = sess.run(
+            [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
+            feed_dict={graph['images']: resized_image, graph['keep_prob']: 1.0,
+                       graph['is_training']: False})
+        cols, rows = predicted_indexes.shape
+        list_length = rows if (rows < 6) else 6
+        predicted_indexes2 = predicted_indexes[0,:list_length]
+        predicted_chars = [labelCharMap.get(str(index)) for index in predicted_indexes2]
+        predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
+        return predicted_chars, predicted_indexes2, predicted_probabilities2
+
+    return recognizer
+
+def interactiveInference():
+    recognizer = get_predictor()
+    while (True):
+        inputData = input(" Enter character image file name (/ to exit)")
+        if inputData == "/":
+            break
+        firstIndex, predict_val, char = recognizer(inputData)
+        logger.info('Predicted index: {0} \nPredicted val: {1} \nChar: {2}'
+                    .format(firstIndex, predict_val * 100, char))
 
 
 def main(_):
     print(FLAGS.mode)
     if FLAGS.mode == "train":
         train()
+
     elif FLAGS.mode == 'validation':
         dct = validation()
         result_file = 'result.dict'
@@ -310,11 +346,31 @@ def main(_):
         with open(result_file, 'wb') as f:
             pickle.dump(dct, f)
         logger.info('Write file ends')
+
     elif FLAGS.mode == 'inference':
-        image_path = '../data/test/00190/13320.png'
-        final_predict_val, final_predict_index = inference(image_path)
-        logger.info('the result info label {0} predict index {1} predict_val {2}'.format(190, final_predict_index,
-                                                                                         final_predict_val))
+        image_path = data_root_dir + '/test/00006/6729.png'
+        final_predict_val, final_predict_index, char = inference(image_path)
+        logger.info('Predicted index: {0} \nPredicted val: {1} \nChar: {2}'
+                    .format(final_predict_index, final_predict_val * 100, char))
+
+    elif FLAGS.mode == 'interactiveInference':
+        interactiveInference()
+
+    elif FLAGS.mode == 'testCrop':
+        testCrop()
+
+
+def testCrop():
+    image_png = Image.open('webApp/onlineCharacter.png')
+    cropped_image = utils.crop_image(image_png)
+    cropped_image.save('cropped.png', 'PNG')
+    return cropped_image
+
 
 if __name__ == "__main__":
+    tf.app.flags.DEFINE_string('checkpoint_dir', './checkpoint/', 'the checkpoint dir')
+    labelCharMap = utils.loadLabelCharMap('labelCharMapFile.txt')
     tf.app.run()
+else:  # webServer mode
+    labelCharMap = utils.loadLabelCharMap('../labelCharMapFile.txt')
+    tf.app.flags.DEFINE_string('checkpoint_dir', '../checkpoint/', 'the checkpoint dir')
