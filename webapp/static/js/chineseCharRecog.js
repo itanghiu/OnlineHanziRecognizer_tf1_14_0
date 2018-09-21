@@ -1,5 +1,7 @@
 
 var strokeFinishedFunction =function(e){
+
+    $('#resultTable').text("");// erases the result table
     charBase64 = $('#signature').jSignature('getData')
     charBase64 = charBase64.replace("data:image/png;base64,", "")
     exportImage(charBase64)

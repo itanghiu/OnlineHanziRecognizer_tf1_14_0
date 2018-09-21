@@ -3,6 +3,7 @@ import numpy as np
 import codecs
 import cv2
 import time;
+from datetime import datetime
 
 # image is a png image
 # returns a png image
@@ -70,3 +71,12 @@ def loadCharLabelMap(filePath):
             charLabelMap[char] = label
     print("Execution time: %s s." % str(time.time() - start_time))
     return charLabelMap
+
+def r(start_time):
+
+    delta = datetime.now() - start_time
+    ms = delta.seconds * 1000 + delta.microseconds / 1000
+    if (ms >1000):
+        return str(round( ms/1000, 2)) + " s"
+    else:
+        return str(round(ms, 2)) + " ms"
