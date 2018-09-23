@@ -112,114 +112,57 @@ class DataIterator:
         # image_batch = shape(128,64,64,1)  label_batch = shape = (128,)
         return image_batch, label_batch
 
-def build_graph(top_k):
-
-    # (1-keep_prob) equals to dropout rate on fully-connected layers
-    keep_prob = tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob')
-    # Set up places for data and label, so that we can feed data into network later
-    images = tf.placeholder(tf.float32, shape=[None, 64, 64, 1], name="img_batch")
-    labels = tf.placeholder(tf.int64, shape=[None], name="label_batch")
-    is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
-
-    # Structure references to : http://yuhao.im/files/Zhang_CNNChar.pdf,
-    # however I adjust a little bit due to limited computational resource.
-    # Four convolutional layers with kernel size of [3,3], and ReLu as activation function
-    conv1 = slim.conv2d(images, 64, [3, 3], 1, padding="SAME", scope="conv1")
-    pool1 = slim.max_pool2d(conv1, [2, 2], [2, 2], padding="SAME")
-    conv2 = slim.conv2d(pool1, 128, [3, 3], padding="SAME", scope="conv2")
-    pool2 = slim.max_pool2d(conv2, [2, 2], [2, 2], padding="SAME")
-    conv3 = slim.conv2d(pool2, 256, [3, 3], padding="SAME", scope="conv3")
-    pool3 = slim.max_pool2d(conv3, [2, 2], [2, 2], padding="SAME")
-    conv4 = slim.conv2d(pool3, 512, [3, 3], [2, 2], scope="conv4", padding="SAME")
-    pool4 = slim.max_pool2d(conv4, [2, 2], [2, 2], padding="SAME")
-    # Flat the feature map so that we can connect it to fully-connected layers
-    flat = slim.flatten(pool4)
-    # Two fully-connected layers with dropout rate as mentioned at the start
-    # First layer used tanh() as activation function
-    fcnet1 = slim.fully_connected(slim.dropout(flat, keep_prob=keep_prob), 1024, activation_fn=tf.nn.tanh,
-                                  scope="fcnet1")
-    fcnet2 = slim.fully_connected(slim.dropout(fcnet1, keep_prob=keep_prob), FLAGS.charset_size, activation_fn=None, scope="fcnet2")
-
-    # loss function is defined as cross entropy on result of softmax function on last layer
-    loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=fcnet2, labels=labels))
-
-    # compare result to actual label to get accuracy
-    accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(fcnet2, 1), labels), tf.float32))
-
-    step = tf.get_variable("step", shape=[], initializer=tf.constant_initializer(0), trainable=False)
-
-    # learning rate with exponential decay
-    lrate = tf.train.exponential_decay(2e-4, step, decay_rate=0.97, decay_steps=2000, staircase=True)
-
-    # Adam optimizer to decrease loss value
-    optimizer = tf.train.AdamOptimizer(learning_rate=lrate).minimize(loss, global_step=step)
-    # added
-    train_op = slim.learning.create_train_op(loss, optimizer, global_step=step)
-
-    prob_dist = tf.nn.softmax(fcnet2)
-    predicted_val_top_k, predicted_index_top_k = tf.nn.top_k(prob_dist, 3)
-    # Write log into TensorBoard
-    tf.summary.scalar("loss", loss)
-    tf.summary.scalar("accuracy", accuracy)
-    summary = tf.summary.merge_all()
-    return {"images": images,
-            "labels": labels,
-            'keep_prob': keep_prob,
-            "global_step": step,
-            "optimizer": optimizer,
-            "loss": loss,
-            "accuracy": accuracy,
-            "predicted_val_top_k": predicted_val_top_k,
-            "predicted_index_top_k": predicted_index_top_k,
-            "merged_summary_op": summary,
-            'is_training': is_training,
-            'train_op': train_op
-            }
-
-def build_graph_orig(top_k):
+def build_graph2(top_k):
 
     keep_prob = tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob')
     images = tf.placeholder(dtype=tf.float32, shape=[None, 64, 64, 1], name='image_batch')
     labels = tf.placeholder(dtype=tf.int64, shape=[None], name='label_batch')
     is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
-    with tf.Session() as sess:
+    #with tf.Session() as sess:
     #with tf.device('/gpu:0'):
     #with tf.device('/cpu:0'):
-        with slim.arg_scope([slim.conv2d, slim.fully_connected],
-                            normalizer_fn=slim.batch_norm,
-                            normalizer_params={'is_training': is_training}):
-            conv3_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
-            max_pool_1 = slim.max_pool2d(conv3_1, [2, 2], [2, 2], padding='SAME', scope='pool1')
-            conv3_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
-            max_pool_2 = slim.max_pool2d(conv3_2, [2, 2], [2, 2], padding='SAME', scope='pool2')
-            conv3_3 = slim.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3_3')
-            max_pool_3 = slim.max_pool2d(conv3_3, [2, 2], [2, 2], padding='SAME', scope='pool3')
-            conv3_4 = slim.conv2d(max_pool_3, 512, [3, 3], padding='SAME', scope='conv3_4')
-            conv3_5 = slim.conv2d(conv3_4, 512, [3, 3], padding='SAME', scope='conv3_5')
-            max_pool_4 = slim.max_pool2d(conv3_5, [2, 2], [2, 2], padding='SAME', scope='pool4')
+       # with slim.arg_scope([slim.conv2d, slim.fully_connected],normalizer_fn=slim.batch_norm,
+       #                     normalizer_params={'is_training': is_training}):
+    conv3_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
+    max_pool_1 = slim.max_pool2d(conv3_1, [2, 2], [2, 2], padding='SAME', scope='pool1')
 
-            flatten = slim.flatten(max_pool_4)
-            fc1 = slim.fully_connected(slim.dropout(flatten, keep_prob), 1024, activation_fn=tf.nn.relu, scope='fc1')
-            logits = slim.fully_connected(slim.dropout(fc1, keep_prob), FLAGS.charset_size, activation_fn=None, scope='logits')
+    conv3_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
+    max_pool_2 = slim.max_pool2d(conv3_2, [2, 2], [2, 2], padding='SAME', scope='pool2')
 
-        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
-        accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), labels), tf.float32))
+    conv3_3 = slim.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3_3')
+    max_pool_3 = slim.max_pool2d(conv3_3, [2, 2], [2, 2], padding='SAME', scope='pool3')
 
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        if update_ops:
-            updates = tf.group(*update_ops)
-            loss = control_flow_ops.with_dependencies([updates], loss)
+    conv3_4 = slim.conv2d(max_pool_3, 512, [3, 3], padding='SAME', scope='conv3_4')
+    conv3_5 = slim.conv2d(conv3_4, 512, [3, 3], padding='SAME', scope='conv3_5')
+    #max_pool_4 = slim.max_pool2d(conv3_5, [2, 2], [2, 2], padding='SAME', scope='pool4')
+    max_pool_4 = slim.max_pool2d(conv3_4, [2, 2], [2, 2], padding='SAME', scope='pool4')
 
-        global_step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.1)
-        train_op = slim.learning.create_train_op(loss, optimizer, global_step=global_step)
-        probabilities = tf.nn.softmax(logits)
+    flatten = slim.flatten(max_pool_4)
+    fc1 = slim.fully_connected(slim.dropout(flatten, keep_prob), 1024, activation_fn=tf.nn.relu, scope='fc1')
+    logits = slim.fully_connected(slim.dropout(fc1, keep_prob), FLAGS.charset_size, activation_fn=None, scope='logits')
 
-        tf.summary.scalar('loss', loss)
-        tf.summary.scalar('Accuracy', accuracy)
-        merged_summary_op = tf.summary.merge_all()
-        predicted_val_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k)
-        accuracy_in_top_k = tf.reduce_mean(tf.cast(tf.nn.in_top_k(probabilities, labels, top_k), tf.float32))
+    loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+    accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), labels), tf.float32))
+
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    if update_ops:
+        updates = tf.group(*update_ops)
+        loss = control_flow_ops.with_dependencies([updates], loss)
+
+    global_step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
+    # if I uncomment this line, the accuracy will staty at 0.3
+    #optimizer = tf.train.AdamOptimizer(learning_rate=0.1)
+    lrate = tf.train.exponential_decay(2e-4, global_step, decay_rate=0.97, decay_steps=2000, staircase=True)
+    optimizer = tf.train.AdamOptimizer(learning_rate=lrate).minimize(loss, global_step=global_step)
+
+    #train_op = slim.learning.create_train_op(loss, optimizer, global_step=global_step)
+    probabilities = tf.nn.softmax(logits)
+
+    tf.summary.scalar('loss', loss)
+    tf.summary.scalar('Accuracy', accuracy)
+    merged_summary_op = tf.summary.merge_all()
+    predicted_val_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k)
+    accuracy_in_top_k = tf.reduce_mean(tf.cast(tf.nn.in_top_k(probabilities, labels, top_k), tf.float32))
 
     return {'images': images,
             'labels': labels,
@@ -228,34 +171,99 @@ def build_graph_orig(top_k):
             "optimizer": optimizer,
             'loss': loss,
             'accuracy': accuracy,
-            'predicted_index_top_k': predicted_index_top_k,
             'predicted_val_top_k': predicted_val_top_k,
+            'predicted_index_top_k': predicted_index_top_k,
             'merged_summary_op': merged_summary_op,
             'is_training': is_training,
 
             'accuracy_top_k': accuracy_in_top_k,
-            'train_op': train_op,
+            #'train_op': train_op,
             'predicted_distribution': probabilities,
             'top_k': top_k
             }
 
+def build_graph(top_k):
+
+    keep_prob = tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob')
+    images = tf.placeholder(dtype=tf.float32, shape=[None, 64, 64, 1], name='image_batch')
+    labels = tf.placeholder(dtype=tf.int64, shape=[None], name='label_batch')
+    is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
+    #with tf.Session() as sess:
+    #with tf.device('/gpu:0'):
+    #with tf.device('/cpu:0'):
+    #with tf.device('/gpu:0'):
+    #with slim.arg_scope([slim.conv2d, slim.fully_connected],
+    #                        normalizer_fn=slim.batch_norm,
+   #                         normalizer_params={'is_training': is_training}):
+    conv3_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
+    max_pool_1 = slim.max_pool2d(conv3_1, [2, 2], [2, 2], padding='SAME', scope='pool1')
+    conv3_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
+    max_pool_2 = slim.max_pool2d(conv3_2, [2, 2], [2, 2], padding='SAME', scope='pool2')
+    conv3_3 = slim.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3_3')
+    max_pool_3 = slim.max_pool2d(conv3_3, [2, 2], [2, 2], padding='SAME', scope='pool3')
+    conv3_4 = slim.conv2d(max_pool_3, 512, [3, 3], padding='SAME', scope='conv3_4')
+    conv3_5 = slim.conv2d(conv3_4, 512, [3, 3], padding='SAME', scope='conv3_5')
+    max_pool_4 = slim.max_pool2d(conv3_5, [2, 2], [2, 2], padding='SAME', scope='pool4')
+
+    flatten = slim.flatten(max_pool_4)
+    fc1 = slim.fully_connected(slim.dropout(flatten, keep_prob), 1024,
+                               activation_fn=tf.nn.relu, scope='fc1')
+    logits = slim.fully_connected(slim.dropout(fc1, keep_prob), FLAGS.charset_size, activation_fn=None,
+                                  scope='fc2')
+    loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+    accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), labels), tf.float32))
+
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    if update_ops:
+        updates = tf.group(*update_ops)
+        loss = control_flow_ops.with_dependencies([updates], loss)
+
+    global_step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
+    lrate = tf.train.exponential_decay(2e-4, global_step, decay_rate=0.97, decay_steps=2000, staircase=True)
+    optimizer = tf.train.AdamOptimizer(learning_rate=lrate)
+    train_op = slim.learning.create_train_op(loss, optimizer, global_step=global_step)
+    probabilities = tf.nn.softmax(logits)
+
+    tf.summary.scalar('loss', loss)
+    tf.summary.scalar('accuracy', accuracy)
+    merged_summary_op = tf.summary.merge_all()
+    predicted_val_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k)
+    accuracy_in_top_k = tf.reduce_mean(tf.cast(tf.nn.in_top_k(probabilities, labels, top_k), tf.float32))
+
+    return {'images': images,
+            'labels': labels,
+            'keep_prob': keep_prob,
+            'global_step': global_step,
+            "optimizer": optimizer,
+            'loss': loss,
+            'accuracy': accuracy,
+            'predicted_val_top_k': predicted_val_top_k,
+            'predicted_index_top_k': predicted_index_top_k,
+            'merged_summary_op': merged_summary_op,
+            'is_training': is_training,
+
+            'train_op': train_op,
+            'accuracy_top_k': accuracy_in_top_k,
+            #'train_op': train_op,
+            'predicted_distribution': probabilities,
+            'top_k': top_k
+            }
 
 def training():
 
     train_feeder = DataIterator(data_dir=DATA_TRAINING)
     test_feeder = DataIterator(data_dir=DATA_TEST)
-    model_name = 'chinese-rec-model'
     # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True,
                                           log_device_placement=True)) as sess:
+
         train_images, train_labels = train_feeder.input_pipeline(batch_size=FLAGS.batch_size, aug=True)
         test_images, test_labels = test_feeder.input_pipeline(batch_size=FLAGS.batch_size)
         graph = build_graph(top_k=1)
-        saver = tf.train.Saver()
         sess.run(tf.global_variables_initializer())
         coordinator = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coordinator)
-
+        saver = tf.train.Saver()
         train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/training', sess.graph)
         test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test')
         start_step = 0
@@ -273,9 +281,7 @@ def training():
         logger.info("Test data size: %d" % test_feeder.size)
         print("Getting training data...")
         try:
-            i = 0
             while not coordinator.should_stop():
-                i += 1
                 start_time = datetime.now()
                 train_images_batch, train_labels_batch = sess.run([train_images, train_labels])
                 print("Getting training data took %s " % utils.r(start_time))
@@ -283,13 +289,13 @@ def training():
                              graph['labels']: train_labels_batch,
                              graph['keep_prob']: 0.8,
                              graph['is_training']: True}
-                #_, loss_val, train_summary, step = sess.run(
-                #    [graph['train_op'], graph['loss'], graph['merged_summary_op'], graph['global_step']], feed_dict=feed_dict)
-                _, loss_val, train_summary, step = sess.run(
-                    [graph['train_op'], graph['loss'], graph['merged_summary_op'], graph['global_step']],  feed_dict=feed_dict)
+                _, loss, train_summary, step = sess.run(
+                    [graph['train_op'], graph['loss'], graph['merged_summary_op'], graph['global_step']], feed_dict=feed_dict)
+                #_, loss, train_summary, step = sess.run(
+                 #   [graph['optimizer'], graph['loss'], graph['merged_summary_op'], graph['global_step']], feed_dict=feed_dict)
 
                 train_writer.add_summary(train_summary, step)
-                logger.info("Step #%s took %s. Loss: %d \n" % (step, utils.r(start_time), loss_val))
+                logger.info("Step #%s took %s. Loss: %d \n" % (step, utils.r(start_time), loss))
                 if step > FLAGS.max_steps:
                     break
 
@@ -306,16 +312,17 @@ def training():
                     logger.info('---------- Step #%d   Test accuracy: %.2f ' % (int(step), accuracy_test))
                 if step % FLAGS.save_steps == 1:
                     logger.info('Saving checkpoint of step %s' % step)
-                    saver.save(sess, os.path.join(FLAGS.checkpoint_dir, model_name),global_step=graph['global_step'])
+                    saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'chinese-rec-model'),global_step=graph['global_step'])
         except tf.errors.OutOfRangeError:
-            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, model_name), global_step=graph['global_step'])
+            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'chinese-rec-model'), global_step=graph['global_step'])
         finally:
             logger.info('Training Completed in  %s ' % utils.r(start_time))
             coordinator.request_stop()
             train_writer.close()
             test_writer.close()
-            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, model_name), global_step=graph['global_step'])
-        coordinator.join(threads)
+            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'chinese-rec-model'), global_step=graph['global_step'])
+            coordinator.join(threads)
+            sess.close()
 
 
 def validation():
