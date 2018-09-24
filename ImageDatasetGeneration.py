@@ -9,9 +9,9 @@ import struct
 import codecs
 import time;
 import utils;
+import Data
 
-CHAR_LABEL_DICO_FILE_NAME = 'charIndexDicoFile.txt'
-LABEL_CHAR_DICO_FILE_NAME ='labelCharMapFile.txt'
+CHAR_LABEL_DICO_FILE_NAME = 'charLabelDicoFile.txt'
 GNT_TRAINING_PATH = 'C:\DATA\PROJECTS\CASIA\OFFLINE\HWDB1.1trn_gnt'
 GNT_TEST_PATH = 'C:\DATA\PROJECTS\CASIA\OFFLINE\HWDB1.1tst_gnt'
 OUTPUT_DIR = 'C:\TEMP_GENERATED_DATASET'
@@ -40,21 +40,9 @@ def build_char_index_dictionary():
     print("Total %s characters. Execution time: %d s." % (str(len(character_index_dico)), time.time() - start_time))
     return character_index_dico
 
-
-def build_label_char_map_file(character_label_dico):
-
-    print("Building label_char_map ... ")
-    start_time = time.time()
-    file = codecs.open(LABEL_CHAR_DICO_FILE_NAME, 'w', 'gb2312')
-    for character in character_label_dico.keys():
-        label = character_label_dico[character]
-    file.write(str(label) + " " + character + "\n")
-    file.close()
-    print("Execution time: %d s." %  (time.time() - start_time))
-
 #  Extracts all the character images contained in one gnt file and put each extracted
 # image into its corresponding directory.
-def convert_gnt_to_png(gnt_dir, png_dir, char_dico):
+def convert_gnt_to_png(gnt_dir, png_dir, char_label_dico):
 
     start_time = time.time()
     i = 0
@@ -64,7 +52,7 @@ def convert_gnt_to_png(gnt_dir, png_dir, char_dico):
         for image, tag_code in extract_image_and_tag_from_gnt_file(gnt_file):
             i += 1
             tag_code_uni = struct.pack('>H', tag_code).decode('gb2312') # chinese character
-            character_dir = png_dir + "/" + '%0.5d' % char_dico[tag_code_uni]
+            character_dir = png_dir + "/" + '%0.5d' % char_label_dico[tag_code_uni]
             # character_dir examples : '00000', '00001', '00002'...
             # character_dir is a dir that contains all the 240 images of a given character
             os.makedirs(character_dir, exist_ok=True)
@@ -92,16 +80,14 @@ def main():
     test_out_path = os.path.join(OUTPUT_DIR, "test")
 
     #char_dictionary = build_char_index_dictionary()
-    char_dictionary = utils.loadCharLabelMap(CHAR_LABEL_DICO_FILE_NAME)
-
-    build_label_char_map_file(char_dictionary)
+    char_label_dictionary = Data.load_char_label_map(CHAR_LABEL_DICO_FILE_NAME)
 
     print("Extracting training images.. ")
-    training_images = convert_gnt_to_png(GNT_TRAINING_PATH, training_out_path, char_dictionary)
+    training_images = convert_gnt_to_png(GNT_TRAINING_PATH, training_out_path, char_label_dictionary)
     print("Total " + str(training_images) + " images in training set.")
 
     print("Extracting test images.. ")
-    test_images = convert_gnt_to_png(GNT_TEST_PATH, test_out_path, char_dictionary)
+    test_images = convert_gnt_to_png(GNT_TEST_PATH, test_out_path, char_label_dictionary)
     print("Total " + str(test_images) + " images in test set.")
 
 if __name__ == '__main__':

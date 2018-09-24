@@ -1,8 +1,6 @@
 from PIL import Image
 import numpy as np
-import codecs
 import cv2
-import time;
 from datetime import datetime
 
 # image is a png image
@@ -35,42 +33,12 @@ def set_image_background_to_white(image):
 
 
 def resize_image(image, width, height):
+
     resized_image = Image.open(image).convert('L')
     resized_image = resized_image.resize((width, height), Image.ANTIALIAS)
     resized_image = np.asarray(resized_image) / 255.0
     resized_image = resized_image.reshape([-1, 64, 64, 1])
     return resized_image
-
-
-def loadLabelCharMap(filePath):
-
-    print("Loading LabelCharMap ... ")
-    start_time = time.time()
-    labelCharMap = {}
-    with codecs.open(filePath, 'r', 'gb2312') as f:
-        for line in f:
-            lineWithoutCR = line.split("\n")[0]
-            splitted = lineWithoutCR.split(" ")
-            label = splitted[0]
-            char = splitted[1]
-            labelCharMap[label] = char
-    print("Execution time: %s s." % str(time.time() - start_time))
-    return labelCharMap
-
-def loadCharLabelMap(filePath):
-
-    print("Loading CharLabelMap ... ")
-    start_time = time.time()
-    charLabelMap = {}
-    with codecs.open(filePath, 'r', 'gb2312') as f:
-        for line in f:
-            lineWithoutCR = line.split("\n")[0]
-            splitted = lineWithoutCR.split(" ")
-            char = splitted[0]
-            label = int(splitted[1])
-            charLabelMap[char] = label
-    print("Execution time: %s s." % str(time.time() - start_time))
-    return charLabelMap
 
 def r(start_time):
 
@@ -80,3 +48,4 @@ def r(start_time):
         return str(round( ms/1000, 2)) + " s"
     else:
         return str(round(ms, 2)) + " ms"
+
