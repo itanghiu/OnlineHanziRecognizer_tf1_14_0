@@ -44,31 +44,39 @@ FLAGS = tf.app.flags.FLAGS
 
 
 def build_graph(top_k):
-    keep_prob = tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob')
-    images = tf.placeholder(dtype=tf.float32, shape=[None, 64, 64, 1], name='image_batch')
-    labels = tf.placeholder(dtype=tf.int64, shape=[None], name='label_batch')
-    is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
 
-    # stride = 1
-    conv3_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
-    max_pool_1 = slim.max_pool2d(conv3_1, [2, 2], [2, 2], padding='SAME', scope='pool1')
+    with tf.variable_scope("placeholder"):
+        keep_nodes_probabilities = tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob')
+        images = tf.placeholder(dtype=tf.float32, shape=[None, 64, 64, 1], name='image_batch')
+        labels = tf.placeholder(dtype=tf.int64, shape=[None], name='label_batch')
+        is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
 
-    conv3_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
-    max_pool_2 = slim.max_pool2d(conv3_2, [2, 2], [2, 2], padding='SAME', scope='pool2')
+    with tf.variable_scope("convolutional_layer"):
+        # stride = 1
+        conv3_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
+        max_pool_1 = slim.max_pool2d(conv3_1, [2, 2], [2, 2], padding='SAME', scope='pool1')
 
-    conv3_3 = slim.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3_3')
-    max_pool_3 = slim.max_pool2d(conv3_3, [2, 2], [2, 2], padding='SAME', scope='pool3')
+        conv3_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
+        max_pool_2 = slim.max_pool2d(conv3_2, [2, 2], [2, 2], padding='SAME', scope='pool2')
 
-    conv3_4 = slim.conv2d(max_pool_3, 512, [3, 3], padding='SAME', scope='conv3_4')
-    conv3_5 = slim.conv2d(conv3_4, 512, [3, 3], padding='SAME', scope='conv3_5')
-    max_pool_4 = slim.max_pool2d(conv3_5, [2, 2], [2, 2], padding='SAME', scope='pool4')
+        conv3_3 = slim.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3_3')
+        max_pool_3 = slim.max_pool2d(conv3_3, [2, 2], [2, 2], padding='SAME', scope='pool3')
+
+        conv3_4 = slim.conv2d(max_pool_3, 512, [3, 3], padding='SAME', scope='conv3_4')
+        conv3_5 = slim.conv2d(conv3_4, 512, [3, 3], padding='SAME', scope='conv3_5')
+        max_pool_4 = slim.max_pool2d(conv3_5, [2, 2], [2, 2], padding='SAME', scope='pool4')
 
     flatten = slim.flatten(max_pool_4)
-    fc1 = slim.fully_connected(slim.dropout(flatten, keep_prob), 1024, activation_fn=tf.nn.relu, scope='fc1')
-    logits = slim.fully_connected(slim.dropout(fc1, keep_prob), Data.CHARSET_SIZE, activation_fn=None, scope='fc2')
 
-    loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
-    accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), labels), tf.float32))
+    with tf.variable_scope("fc_layer"):
+        fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities), 1024, activation_fn=tf.nn.relu, scope='fc1')
+        logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities), Data.CHARSET_SIZE, activation_fn=None, scope='fc2')
+
+    with tf.variable_scope("loss"):
+        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+
+    with tf.variable_scope("loss"):
+        accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(logits, 1), labels), tf.float32))
 
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     if update_ops:
@@ -76,8 +84,8 @@ def build_graph(top_k):
         loss = control_flow_ops.with_dependencies([updates], loss)
 
     global_step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
-    lrate = tf.train.exponential_decay(2e-4, global_step, decay_rate=0.97, decay_steps=2000, staircase=True)
-    optimizer = tf.train.AdamOptimizer(learning_rate=lrate)
+    learning_rate = tf.train.exponential_decay(2e-4, global_step, decay_rate=0.97, decay_steps=2000, staircase=True)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = slim.learning.create_train_op(loss, optimizer, global_step=global_step)
     probabilities = tf.nn.softmax(logits)
 
@@ -89,7 +97,7 @@ def build_graph(top_k):
 
     return {'images': images,
             'labels': labels,
-            'keep_prob': keep_prob,
+            'keep_prob': keep_nodes_probabilities,
             'global_step': global_step,
             "optimizer": optimizer,
             'loss': loss,
@@ -141,6 +149,7 @@ def training():
         print("Getting training data...")
 
         def train():
+            start_time = datetime.now()
             train_images_batch, train_labels_batch = sess.run([train_images, train_labels])
             print("Getting training data took %s " % utils.r(start_time))
             feed_dict = {graph['images']: train_images_batch,
@@ -156,8 +165,8 @@ def training():
             logger.info("Step #%s took %s. Loss: %d \n" % (step, utils.r(start_time), loss))
             return step
 
+        start_time = datetime.now()
         while not coordinator.should_stop():
-            start_time = datetime.now()
             step = train()
             if step > FLAGS.max_steps:
                 break
