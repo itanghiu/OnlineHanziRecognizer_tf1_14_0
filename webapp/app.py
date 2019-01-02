@@ -4,6 +4,7 @@ import base64
 from PIL import Image
 from io import BytesIO
 import cnn
+
 import utils
 import logging
 import json
@@ -11,6 +12,7 @@ import json
 logger = logging.getLogger('Training a chinese write char recognition')
 app = Flask(__name__)
 recognizer = cnn.get_predictor()
+sess, graph, training_init_op, saver = cnn.init_graph()
 
 @app.route('/')
 def index():
@@ -24,12 +26,15 @@ def send_js(path):
 def add_char_image():
         charBase64 = request.get_json().get("value")
         image = Image.open(BytesIO(base64.b64decode(charBase64)))#converts from base64 to png
-       # image is RGB
+        # image is RGB
         image = utils.set_image_background_to_white(image)
         image = utils.crop_image(image)
         handWrittenCharFileName = 'onlineCharacter.png'
         image.save(handWrittenCharFileName, 'PNG')
-        predicted_chars, predicted_indexes, predicted_probabilities = recognizer(handWrittenCharFileName)
+        #predicted_chars, predicted_indexes, predicted_probabilities = recognizer(handWrittenCharFileName)
+
+        predicted_chars, predicted_indexes, predicted_probabilities = recognizer(handWrittenCharFileName, sess, graph,
+                                                                                 training_init_op, saver)
         logger.info('Predicted chars: '+ ":".join(predicted_chars))
         logger.info('Predicted probabilities: ' + ", ".join(predicted_probabilities))
         result = dict(chars=predicted_chars, probabilities=predicted_probabilities)

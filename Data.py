@@ -3,19 +3,34 @@ import os
 import tensorflow as tf
 import utils
 import codecs
+import numpy
 from datetime import datetime
 
 
 class Data:
 
+    CHECKPOINT = 'C:\DATA\DEV\PYTHON\OnlineHanziRecognizer\checkpoint'
+    # DATA_ROOT_DIR = '/DATA/CASIA/onlineHanziRecognizer'
+    DATA_ROOT_DIR = '/TEMP_DATA_SET'
+    DATA_TRAINING = DATA_ROOT_DIR + '/training'
+    DATA_TEST = DATA_ROOT_DIR + '/test'
     CHARSET_SIZE = 3755
     IMAGE_SIZE = 64
 
-    def __init__(self, data_dir, random_flip_up_down=False, random_brightness=False, random_contrast=False):
+    def __init__(self, data_dir= None, image_file_name = None, random_flip_up_down=False, random_brightness=False, random_contrast=True):
 
         self.random_flip_up_down = random_flip_up_down
         self.random_brightness = random_brightness
         self.random_contrast = random_contrast
+
+        #if (image_file_name):# add comment
+        #    self.image_file_paths = [image_file_name]
+        #    self.labels = numpy.array([0])
+        #    return
+        if ((data_dir is None) and (image_file_name is None)):  # add comment
+            self.image_file_paths = [utils.HAND_WRITTEN_CHAR_FILE_NAME]
+            self.labels = numpy.array([0])
+            return
 
         truncate_path = data_dir + os.sep + ('%05d' % Data.CHARSET_SIZE)  # display number with 5 leading 0
         self.image_file_paths = []
@@ -23,14 +38,15 @@ class Data:
             if root < truncate_path:
                 self.image_file_paths += [os.path.join(root, image_file_name) for image_file_name in image_file_names]
         random.shuffle(self.image_file_paths)
-        # the labels are the name of directories converted to int
-        # self.labels = {'00000', '00001', '00002', ...}
+        # the labels are the name of directories converted to int: {'00000', '00001', '00002', ...}
         self.labels = []
         for image_file_path in self.image_file_paths:
             # images_dir_name example : '00000', '00001', '00002'
             images_dir_name = image_file_path[len(data_dir) + 1:].split(os.sep)[0]
-            self.labels.append(int(images_dir_name))
+            img_dir_name = int(images_dir_name)
+            self.labels.append(img_dir_name)
         print("self.labels size: %d" % len(self.labels))
+
 
     @staticmethod
     def augmentation(self, images):
@@ -59,31 +75,34 @@ class Data:
     def size(self):
         return len(self.labels)
 
-    # converts image_file_paths and labels_tensor to tensors.
-    # shuffle them
-    def get_batch(self, batch_size, num_epochs=None, aug=False):
-        # convert data into tensor
-        images_tensor = tf.convert_to_tensor(self.image_file_paths, dtype=tf.string)
-        labels_tensor = tf.convert_to_tensor(self.labels, dtype=tf.int64)
+    def get_batch(self, batch_size, aug=False):
 
-        # Instead of loading the entire dataset in RAM, which is very RAM consuming,
-        # slice the dataset in batch and read each batch one by one.
-        input_queue = tf.train.slice_input_producer([images_tensor, labels_tensor], num_epochs=num_epochs)
+        def _parse_function(filename):
+            # convert to grey
+            image = tf.read_file(filename)
+            image_grey = tf.image.convert_image_dtype(tf.image.decode_png(image, channels=1), tf.float32)
+            if aug:
+                image_grey = self.augmentation(self, image_grey)
 
-        # Convert data to grey scale
-        image = tf.read_file(input_queue[0])
-        images = tf.image.convert_image_dtype(tf.image.decode_png(image, channels=1), tf.float32)
-        if aug:
-            images = self.augmentation(self, images)
+            # standardize the image size .
+            standard_size = tf.constant([Data.IMAGE_SIZE, Data.IMAGE_SIZE], dtype=tf.int32)
+            images = tf.image.resize_images(image_grey, standard_size)
+            return images
 
-        # standardize the image sizes.
-        standard_size = tf.constant([Data.IMAGE_SIZE, Data.IMAGE_SIZE], dtype=tf.int32)
-        images = tf.image.resize_images(images, standard_size)
+        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.image_file_paths)
+        label_dataset = tf.data.Dataset.from_tensor_slices(self.labels)
+        image_file_path_dataset = image_file_path_dataset.map(_parse_function)
 
-        labels = input_queue[1]
-        image_batch, label_batch = tf.train.shuffle_batch([images, labels], batch_size=batch_size, capacity=50000,
-                                                          min_after_dequeue=10000)
-        return image_batch, label_batch
+        # zip the x and y training data together and shuffle, batch etc.
+        dataset = tf.data.Dataset.zip((image_file_path_dataset, label_dataset)).shuffle(500).repeat().batch(batch_size)
+
+        self.iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
+        training_init_op = self.iterator.make_initializer(dataset)
+        return training_init_op
+
+    def get_next_element(self):
+        next_element = self.iterator.get_next()
+        return next_element
 
     def load_char_label_dico(filePath):
 

@@ -1,14 +1,17 @@
+https://github.com/soloice/Chinese-Character-Recognition
 
 
 ### TODO:
 
-- replace the dictionary passed in to tf by tf.queue (cf "tf for deep learning ch7)
+- loop over epoch.
 - add batch normalization
 - use tf.getVariables()
 - replace Relu by Elu
 - replace AdamOptimizer with MomentumOptimizer()
-- change the Xavier initializzation of fc layers to He initialization
-
+- change the Xavier initialization of fc layers to He initialization
+- currently, if 4 images of the same character is sent to the server, the 4 images will be 
+sent to the nn. Modify it so that as soon as the server receives a new image, he stops  the current computation with nn.
+- train the nn on all the data.
 
 L1 and L2 
 
@@ -54,3 +57,47 @@ initialization (with a uniform distribution). You can change this to He initiali
 by using the variance_scaling_initializer() function like this:
 he_init = tf.contrib.layers.variance_scaling_initializer()
 hidden1 = fully_connected(X, n_hidden1, weights_initializer=he_init, scope="h1")
+
+
+---------------------------- -----------
+#### Hyperparameters 
+
+##### filter size : 3x3
+ 
+##### stride size : 1
+
+##### zero padding size: 1
+
+##### max pooling : 2x2 window   stride:2
+
+##### Activation function: Relu 
+
+##### batch size: 100
+
+##### momentum: managed by Adam optimizer
+
+##### Regularization: 
+dropout rate: 0.8
+
+##### Evaluation step: every 100 
+
+##### Learning rate: initial: 0.01 . Halved every 3 epoch
+
+##### Number of epoch: 
+an epoch is composed of 895 000/100 =  8 950 batch
+one step corresponds to one batch
+nbr max step = 16 002. Number of epoch = 16 002 batch /8 950 batch = 1.7
+
+##### initialization: Normal distribution with zero mean and a variance : 0.01 with biases initalized at 0
+
+一
+七
+三
+上
+下
+不
+ 9 与
+ 10 丑
+11 专 
+12 且 
+13 世
