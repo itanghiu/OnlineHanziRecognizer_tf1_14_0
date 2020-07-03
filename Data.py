@@ -17,7 +17,7 @@ class Data:
     # DATA_TRAINING = DATA_ROOT_DIR + '/training'
     # DATA_TEST = DATA_ROOT_DIR + '/test'
 
-    CHECKPOINT = 'E:\DEV\OnlineHanziRecognizer_tf\\new_checkpoint'
+    CHECKPOINT = 'E:\DEV\TENSORFLOW\OnlineHanziRecognizer_tf\\new_checkpoint'
     DATA_ROOT_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'
     DATA_TRAINING = DATA_ROOT_DIR + '/training_light'
     DATA_TEST = DATA_ROOT_DIR + '/test_light'

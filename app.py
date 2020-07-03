@@ -13,7 +13,7 @@ logger = logging.getLogger('app.py')
 logging.basicConfig(filename='webApp.log', level=logging.DEBUG)
 app = Flask(__name__)
 recognizer = cnn.get_predictor()
-sess, graph, training_init_op, saver, data = cnn.init_graph()
+sess, graph, training_init_op, saver, data = cnn.init_graph(utils.HAND_WRITTEN_CHAR_FILE_NAME)
 
 @app.route('/')
 def index():

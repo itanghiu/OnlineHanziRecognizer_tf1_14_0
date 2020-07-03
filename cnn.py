@@ -8,7 +8,7 @@ from Data import Data
 from tensorflow.python.ops import control_flow_ops
 from datetime import datetime
 
-logger = logging.getLogger('Online Hanzi recognizer')
+logger = logging.getLogger('cnn.py')
 logger.setLevel(logging.INFO)
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 ch = logging.StreamHandler()
@@ -183,10 +183,10 @@ def training():
         sess.close()
 
 
-def init_graph(image_file_name):
+def init_graph(img_file_name):
     print('Initializing graph...')
     sess = tf.Session()
-    data = Data(image_file_name)
+    data = Data(image_file_name=img_file_name)
     training_init_op = data.get_batch(batch_size=1, aug=True)
     training_sample = data.get_next_element()
     graph = build_graph(top_k=3, images=training_sample[0], labels=training_sample[1])
@@ -245,32 +245,3 @@ if __name__ == "__main__":  # Learning mode
     tf.app.run()
 else:  # webServer mode
     tf.app.flags.DEFINE_string('checkpoint_dir', Data.CHECKPOINT, 'the checkpoint dir')
-
-#def get_predictor2():
-#     def recognizer(input_image):
-#         sess = tf.Session()
-#         data = Data(data_dir=Data.DATA_ROOT_DIR, image_file_name=input_image)
-#         training_init_op = data.get_batch(batch_size=1, aug=True)
-#         training_sample = data.get_next_element()
-#         graph = build_graph(top_k=3, images=training_sample[0], labels=training_sample[1])
-#         saver = tf.train.Saver()
-#
-#         ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
-#         if ckpt:
-#             saver.restore(sess, ckpt)
-#
-#         sess.run(training_init_op)
-#         predicted_probabilities, predicted_indexes = sess.run(
-#             [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
-#             feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
-#             #feed_dict={graph['images']: training_sample[0], graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
-#
-#         cols, rows = predicted_indexes.shape
-#         list_length = rows if (rows < 6) else 6
-#         predicted_indexes2 = predicted_indexes[0, :list_length]
-#         print(" ".join(map(str, predicted_indexes2)))
-#         predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
-#         predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
-#         return predicted_chars, predicted_indexes2, predicted_probabilities2
-#
-#     return recognizer
