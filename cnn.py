@@ -183,10 +183,10 @@ def training():
         sess.close()
 
 
-def init_graph():
+def init_graph(image_file_name):
     print('Initializing graph...')
     sess = tf.Session()
-    data = Data()
+    data = Data(image_file_name)
     training_init_op = data.get_batch(batch_size=1, aug=True)
     training_sample = data.get_next_element()
     graph = build_graph(top_k=3, images=training_sample[0], labels=training_sample[1])
@@ -222,8 +222,8 @@ def get_predictor():
 
 def recognize_image(image_file_name):
     recognizer = get_predictor()
-    sess, graph, training_init_op, saver, data = init_graph()
-    data.set_image_file_name(image_file_name)
+    sess, graph, training_init_op, saver, data = init_graph(image_file_name)
+    #data.set_image_file_name(image_file_name)
     return recognizer(sess, graph, training_init_op, saver)
 
 
