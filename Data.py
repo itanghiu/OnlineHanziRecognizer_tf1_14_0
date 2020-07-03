@@ -9,11 +9,18 @@ from datetime import datetime
 
 class Data:
 
-    CHECKPOINT = 'C:\DATA\DEV\PYTHON\OnlineHanziRecognizer\checkpoint'
-    # DATA_ROOT_DIR = '/DATA/CASIA/onlineHanziRecognizer'
-    DATA_ROOT_DIR = '/TEMP_DATA_SET'
-    DATA_TRAINING = DATA_ROOT_DIR + '/training'
-    DATA_TEST = DATA_ROOT_DIR + '/test'
+    #DATA_ROOT_DIR = '/DATA/CASIA/onlineHanziRecognizer'
+
+    #CHECKPOINT = 'E:\TENSORFLOW_CHECKPOINT\TMP'
+    # DATA_ROOT_DIR = '/TEMP_DATA_SET'
+    #DATA_ROOT_DIR = 'E:\DEV\OnlineHanziRecognizer_tf'
+    # DATA_TRAINING = DATA_ROOT_DIR + '/training'
+    # DATA_TEST = DATA_ROOT_DIR + '/test'
+
+    CHECKPOINT = 'E:\DEV\OnlineHanziRecognizer_tf\\new_checkpoint'
+    DATA_ROOT_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'
+    DATA_TRAINING = DATA_ROOT_DIR + '/training_light'
+    DATA_TEST = DATA_ROOT_DIR + '/test_light'
     CHARSET_SIZE = 3755
     IMAGE_SIZE = 64
 
@@ -23,10 +30,11 @@ class Data:
         self.random_brightness = random_brightness
         self.random_contrast = random_contrast
 
-        #if (image_file_name):# add comment
-        #    self.image_file_paths = [image_file_name]
-        #    self.labels = numpy.array([0])
-        #    return
+        if (image_file_name):# add comment
+            self.image_file_paths = [image_file_name]
+            self.labels = numpy.array([0])
+            return
+
         if ((data_dir is None) and (image_file_name is None)):  # add comment
             self.image_file_paths = [utils.HAND_WRITTEN_CHAR_FILE_NAME]
             self.labels = numpy.array([0])
@@ -104,9 +112,12 @@ class Data:
         next_element = self.iterator.get_next()
         return next_element
 
+    def set_image_file_name(self, image_file_name):
+        self.image_file_paths = [image_file_name]
+
     def load_char_label_dico(filePath):
 
-        print("Loading CharLabelMap ... ")
+        print("Loading CharLabelDico ... ")
         start_time = datetime.now()
         charLabelMap = {}
         with codecs.open(filePath, 'r', 'gb2312') as f:

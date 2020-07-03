@@ -21,22 +21,26 @@ logdir = "{}/run-{}/".format(root_logdir, now)
 
 LOG_DIR = './log'
 
-tf.app.flags.DEFINE_integer('evaluation_step_frequency', 50,
+LEARNING_RATE = 2e-4
+#LEARNING_RATE = 2e-5
+# LEARNING_RATE = 7.e-4 does not work : loss stalls at 8.23
+tf.app.flags.DEFINE_integer('evaluation_step_frequency', 250,
                             "Evaluates every 'evaluation_step_frequency' step")  # 30
 tf.app.flags.DEFINE_string('mode', 'training', 'Running mode: {"training", "test"}')
 tf.app.flags.DEFINE_integer('batch_size', 100, 'Batch size')  # 20
-tf.app.flags.DEFINE_integer('saving_step_frequency', 50, "Save the network every 'saving_step_frequency' steps")
+tf.app.flags.DEFINE_integer('saving_step_frequency', 250, "Save the network every 'saving_step_frequency' steps")
 tf.app.flags.DEFINE_integer('epoch', 15, 'Number of epoches')
 tf.app.flags.DEFINE_integer('max_steps', 100000, 'the max number of steps for training')  # 300
 tf.app.flags.DEFINE_boolean('restore', True, 'whether to restore from checkpoint')
 
 tf.app.flags.DEFINE_boolean('random_flip_up_down', False, "Whether to random flip up down")
 tf.app.flags.DEFINE_boolean('random_brightness', False, "whether to adjust brightness")
-tf.app.flags.DEFINE_boolean('random_contrast', True, "whether to random constrast")
+tf.app.flags.DEFINE_boolean('random_contrast', True, "whether to random contrast")
 tf.app.flags.DEFINE_boolean('gray', True, "whether to change the rbg to gray")
 gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
 FLAGS = tf.app.flags.FLAGS
-
+# builds the map whose keys are labels and values characters
+label_char_dico = Data.get_label_char_dico(ImageDatasetGeneration.CHAR_LABEL_DICO_FILE_NAME)
 
 def build_graph(top_k, images, labels=None):
     with tf.variable_scope("placeholder"):
@@ -61,14 +65,18 @@ def build_graph(top_k, images, labels=None):
     flatten = slim.flatten(max_pool_4)
 
     with tf.variable_scope("fc_layer"):
-        fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities), 1024, activation_fn=tf.nn.relu, scope='fc1')
-        logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities), Data.CHARSET_SIZE, activation_fn=None, scope='fc2')
+        fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities), 1024, activation_fn=tf.nn.relu,
+                                   scope='fc1')
+        logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities), Data.CHARSET_SIZE,
+                                      activation_fn=None, scope='fc2')
 
     with tf.variable_scope("loss"):
         loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
 
     with tf.variable_scope("accuracy"):
         math_ops = tf.cast(tf.argmax(logits, 1), tf.int32)
+        # math_ops = tf.cast(tf.argmax(logits, 1), tf.int64)
+
         tensor_flag = tf.equal(math_ops, labels)
         accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32))
 
@@ -78,7 +86,8 @@ def build_graph(top_k, images, labels=None):
         loss = control_flow_ops.with_dependencies([updates], loss)
 
     step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
-    learning_rate = tf.train.exponential_decay(learning_rate =2e-4, global_step=step, decay_rate=0.97, decay_steps=2000, staircase=True)
+    learning_rate = tf.train.exponential_decay(learning_rate=LEARNING_RATE, global_step=step, decay_rate=0.97,
+                                               decay_steps=2000, staircase=True)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     # the step will be incremented after the call to optimizer.minize()
     train_op = slim.learning.create_train_op(loss, optimizer, global_step=step)
@@ -88,7 +97,7 @@ def build_graph(top_k, images, labels=None):
     tf.summary.scalar('accuracy', accuracy)
     merged_summary_op = tf.summary.merge_all()
     predicted_val_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k)
-    #accuracy_in_top_k = tf.reduce_mean(tf.cast(tf.nn.in_top_k(probabilities, labels, top_k), tf.float32))
+    # accuracy_in_top_k = tf.reduce_mean(tf.cast(tf.nn.in_top_k(probabilities, labels, top_k), tf.float32))
 
     return {'images': images,
             'labels': labels,
@@ -130,20 +139,20 @@ def training():
                 print("Restoring from the checkpoint %s at step %d" % (ckpt, start_step))
 
         logger.info('Start training')
-        logger.info("Training data size: %d" % training_data.size )
+        logger.info("Training data size: %d" % training_data.size)
         logger.info("Test data size: %d" % test_data.size)
         print("Getting training data...")
         sess.run(training_init_op)
 
         def train():
             start_time = datetime.now()
-            #print("Getting training data took %s " % utils.r(start_time))
+            # print("Getting training data took %s " % utils.r(start_time))
             feed_dict = {graph['keep_nodes_probabilities']: 0.8, graph['is_training']: True}
             _, loss, train_summary, step = sess.run(
                 [graph['train_op'], graph['loss'], graph['merged_summary_op'], graph['step']],
                 feed_dict=feed_dict)
             train_writer.add_summary(train_summary, step)
-            logger.info("Step #%s took %s. Loss: %d \n" % (step, utils.r(start_time), loss))
+            logger.info("Step #%s took %s. Loss: %.3f \n" % (step, utils.r(start_time), loss))
             return step
 
         start_time = datetime.now()
@@ -174,13 +183,9 @@ def training():
         sess.close()
 
 
-def recognize_image(image):
-    recognizer = get_predictor()
-    return recognizer(image)
-
 def init_graph():
+    print('Initializing graph...')
     sess = tf.Session()
-
     data = Data()
     training_init_op = data.get_batch(batch_size=1, aug=True)
     training_sample = data.get_next_element()
@@ -188,18 +193,12 @@ def init_graph():
     saver = tf.train.Saver()
     init = tf.global_variables_initializer()
     sess.run(init)
-    return (sess, graph, training_init_op, saver)
+    print('End of graph initialization.')
+    return (sess, graph, training_init_op, saver, data)
+
 
 def get_predictor():
-    #def recognizer(input_image):
-    def recognizer(input_image, sess, graph, training_init_op, saver):
-        #sess = tf.Session()
-        #data = Data(image_file_name=input_image)
-        #training_init_op = data.get_batch(batch_size=1, aug=True)
-        #training_sample = data.get_next_element()
-        #graph = build_graph(top_k=3, images=training_sample[0], labels=training_sample[1])
-        #saver = tf.train.Saver()
-
+    def recognizer(sess, graph, training_init_op, saver):
         ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
         if ckpt:
             saver.restore(sess, ckpt)
@@ -212,27 +211,66 @@ def get_predictor():
         cols, rows = predicted_indexes.shape
         list_length = rows if (rows < 6) else 6
         predicted_indexes2 = predicted_indexes[0, :list_length]
-        label_char_dico = Data.get_label_char_dico('../' + ImageDatasetGeneration.CHAR_LABEL_DICO_FILE_NAME)
+        # for i in predicted_indexes2:
+        #     print("predicted indexes: " + i)
+        print(" ".join(map(str, predicted_indexes2)))
         predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
         predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
         return predicted_chars, predicted_indexes2, predicted_probabilities2
 
     return recognizer
 
+def recognize_image(image_file_name):
+    recognizer = get_predictor()
+    sess, graph, training_init_op, saver, data = init_graph()
+    data.set_image_file_name(image_file_name)
+    return recognizer(sess, graph, training_init_op, saver)
+
 
 def main(_):
     print("Mode: %s " % FLAGS.mode)
     if FLAGS.mode == 'recognize_image':
-        image_path = Data.DATA_ROOT_DIR + '/test/00000/34385.png'
-        probability, label, character = recognize_image(image_path)
-        print('Label: %s  Probability: %f  Character: %s' % (label, probability * 100, character))
+        image_file_name = 'onlineCharacter5.png'
+        character, label, probability = recognize_image(image_file_name)
+        print('Label: %s  Probability: %s  Character: %s' % (label[0], probability[0], character[0]))
+        print('Label: %s  Probability: %s  Character: %s' % (label[1], probability[1], character[1]))
+        print('Label: %s  Probability: %s  Character: %s' % (label[2], probability[2], character[2]))
 
     elif FLAGS.mode == "training":
         training()
 
 
-if __name__ == "__main__":# Learning mode
+if __name__ == "__main__":  # Learning mode
     tf.app.flags.DEFINE_string('checkpoint_dir', Data.CHECKPOINT, 'the checkpoint dir')
     tf.app.run()
 else:  # webServer mode
     tf.app.flags.DEFINE_string('checkpoint_dir', Data.CHECKPOINT, 'the checkpoint dir')
+
+#def get_predictor2():
+#     def recognizer(input_image):
+#         sess = tf.Session()
+#         data = Data(data_dir=Data.DATA_ROOT_DIR, image_file_name=input_image)
+#         training_init_op = data.get_batch(batch_size=1, aug=True)
+#         training_sample = data.get_next_element()
+#         graph = build_graph(top_k=3, images=training_sample[0], labels=training_sample[1])
+#         saver = tf.train.Saver()
+#
+#         ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+#         if ckpt:
+#             saver.restore(sess, ckpt)
+#
+#         sess.run(training_init_op)
+#         predicted_probabilities, predicted_indexes = sess.run(
+#             [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
+#             feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
+#             #feed_dict={graph['images']: training_sample[0], graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
+#
+#         cols, rows = predicted_indexes.shape
+#         list_length = rows if (rows < 6) else 6
+#         predicted_indexes2 = predicted_indexes[0, :list_length]
+#         print(" ".join(map(str, predicted_indexes2)))
+#         predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
+#         predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
+#         return predicted_chars, predicted_indexes2, predicted_probabilities2
+#
+#     return recognizer

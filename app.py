@@ -9,10 +9,11 @@ import utils
 import logging
 import json
 
-logger = logging.getLogger('Training a chinese write char recognition')
+logger = logging.getLogger('app.py')
+logging.basicConfig(filename='webApp.log', level=logging.DEBUG)
 app = Flask(__name__)
 recognizer = cnn.get_predictor()
-sess, graph, training_init_op, saver = cnn.init_graph()
+sess, graph, training_init_op, saver, data = cnn.init_graph()
 
 @app.route('/')
 def index():
@@ -25,17 +26,16 @@ def send_js(path):
 @app.route('/addCharImage/', methods=['POST'])
 def add_char_image():
         charBase64 = request.get_json().get("value")
-        image = Image.open(BytesIO(base64.b64decode(charBase64)))#converts from base64 to png
+        image = Image.open(BytesIO(base64.b64decode(charBase64))) #converts from base64 to png
         # image is RGB
         image = utils.set_image_background_to_white(image)
         image = utils.crop_image(image)
-        handWrittenCharFileName = 'onlineCharacter.png'
-        image.save(handWrittenCharFileName, 'PNG')
+        hand_written_char_file_name = utils.HAND_WRITTEN_CHAR_FILE_NAME
+        image.save(hand_written_char_file_name, 'PNG')
         #predicted_chars, predicted_indexes, predicted_probabilities = recognizer(handWrittenCharFileName)
-
-        predicted_chars, predicted_indexes, predicted_probabilities = recognizer(handWrittenCharFileName, sess, graph,
+        predicted_chars, predicted_indexes, predicted_probabilities = recognizer(sess, graph,
                                                                                  training_init_op, saver)
-        logger.info('Predicted chars: '+ ":".join(predicted_chars))
+        logger.info('Predicted chars: ' + ":".join(predicted_chars))
         logger.info('Predicted probabilities: ' + ", ".join(predicted_probabilities))
         result = dict(chars=predicted_chars, probabilities=predicted_probabilities)
         jsonResult = json.dumps(result)

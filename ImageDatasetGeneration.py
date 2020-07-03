@@ -7,14 +7,14 @@ import sys
 import pickle
 import struct
 import codecs
-import time;
-import utils;
-import Data
+from datetime import datetime
+import utils
+from Data import Data
 
 CHAR_LABEL_DICO_FILE_NAME = 'charLabelDicoFile.txt'
-GNT_TRAINING_PATH = 'C:\DATA\PROJECTS\CASIA\OFFLINE\HWDB1.1trn_gnt'
-GNT_TEST_PATH = 'C:\DATA\PROJECTS\CASIA\OFFLINE\HWDB1.1tst_gnt'
-OUTPUT_DIR = 'C:\TEMP_GENERATED_DATASET'
+GNT_TRAINING_PATH = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\OFFLINE\HWDB1.1trn_gnt'
+GNT_TEST_PATH = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\OFFLINE\HWDB1.1tst_gnt'
+OUTPUT_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'
 
 
 # returns a map . key = chinese character, value = index
@@ -44,7 +44,7 @@ def build_char_index_dictionary():
 # image into its corresponding directory.
 def convert_gnt_to_png(gnt_dir, png_dir, char_label_dico):
 
-    start_time = time.time()
+    start_time = datetime.now()
     i = 0
     for file_name in os.listdir(gnt_dir):
         file_path = os.path.join(gnt_dir, file_name)
@@ -59,7 +59,7 @@ def convert_gnt_to_png(gnt_dir, png_dir, char_label_dico):
             image_name = str(i) + ".png"
             cv2.imwrite(character_dir + '/' + image_name, image)
         gnt_file.close()
-    print("Execution time: %d s." %  time.time() - start_time)
+    print("Execution time: %s ." %  utils.r(start_time))
     return i
 
 def extract_image_and_tag_from_gnt_file(file):
@@ -78,9 +78,9 @@ def main():
 
     training_out_path = os.path.join(OUTPUT_DIR, "training")
     test_out_path = os.path.join(OUTPUT_DIR, "test")
-
+    data = Data()
     #char_dictionary = build_char_index_dictionary()
-    char_label_dictionary = Data.load_char_label_map(CHAR_LABEL_DICO_FILE_NAME)
+    char_label_dictionary = data.load_char_label_dico(CHAR_LABEL_DICO_FILE_NAME)
 
     print("Extracting training images.. ")
     training_images = convert_gnt_to_png(GNT_TRAINING_PATH, training_out_path, char_label_dictionary)
