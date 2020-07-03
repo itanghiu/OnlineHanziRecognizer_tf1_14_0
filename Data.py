@@ -112,9 +112,6 @@ class Data:
         next_element = self.iterator.get_next()
         return next_element
 
-    def set_image_file_name(self, image_file_name):
-        self.image_file_paths = [image_file_name]
-
     def load_char_label_dico(filePath):
 
         print("Loading CharLabelDico ... ")

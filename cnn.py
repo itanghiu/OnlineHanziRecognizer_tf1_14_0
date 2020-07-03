@@ -223,7 +223,6 @@ def get_predictor():
 def recognize_image(image_file_name):
     recognizer = get_predictor()
     sess, graph, training_init_op, saver, data = init_graph(image_file_name)
-    #data.set_image_file_name(image_file_name)
     return recognizer(sess, graph, training_init_op, saver)
 
 
@@ -235,7 +234,6 @@ def main(_):
         print('Label: %s  Probability: %s  Character: %s' % (label[0], probability[0], character[0]))
         print('Label: %s  Probability: %s  Character: %s' % (label[1], probability[1], character[1]))
         print('Label: %s  Probability: %s  Character: %s' % (label[2], probability[2], character[2]))
-
     elif FLAGS.mode == "training":
         training()
 
