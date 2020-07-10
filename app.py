@@ -32,7 +32,6 @@ def add_char_image():
         image = utils.crop_image(image)
         hand_written_char_file_name = utils.HAND_WRITTEN_CHAR_FILE_NAME
         image.save(hand_written_char_file_name, 'PNG')
-        #predicted_chars, predicted_indexes, predicted_probabilities = recognizer(handWrittenCharFileName)
         predicted_chars, predicted_indexes, predicted_probabilities = recognizer(sess, graph,
                                                                                  training_init_op, saver)
         logger.info('Predicted chars: ' + ":".join(predicted_chars))

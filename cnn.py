@@ -22,7 +22,7 @@ logdir = "{}/run-{}/".format(root_logdir, now)
 LOG_DIR = './log'
 
 LEARNING_RATE = 2e-4
-#LEARNING_RATE = 2e-5
+# LEARNING_RATE = 2e-5
 # LEARNING_RATE = 7.e-4 does not work : loss stalls at 8.23
 tf.app.flags.DEFINE_integer('evaluation_step_frequency', 250,
                             "Evaluates every 'evaluation_step_frequency' step")  # 30
@@ -30,7 +30,7 @@ tf.app.flags.DEFINE_string('mode', 'training', 'Running mode: {"training", "test
 tf.app.flags.DEFINE_integer('batch_size', 100, 'Batch size')  # 20
 tf.app.flags.DEFINE_integer('saving_step_frequency', 250, "Save the network every 'saving_step_frequency' steps")
 tf.app.flags.DEFINE_integer('epoch', 15, 'Number of epoches')
-tf.app.flags.DEFINE_integer('max_steps', 100000, 'the max number of steps for training')  # 300
+tf.app.flags.DEFINE_integer('max_steps', 251, 'the max number of steps for training')  # 300
 tf.app.flags.DEFINE_boolean('restore', True, 'whether to restore from checkpoint')
 
 tf.app.flags.DEFINE_boolean('random_flip_up_down', False, "Whether to random flip up down")
@@ -42,10 +42,13 @@ FLAGS = tf.app.flags.FLAGS
 # builds the map whose keys are labels and values characters
 label_char_dico = Data.get_label_char_dico(ImageDatasetGeneration.CHAR_LABEL_DICO_FILE_NAME)
 
+
 def build_graph(top_k, images, labels=None):
     with tf.variable_scope("placeholder"):
         keep_nodes_probabilities = tf.placeholder(dtype=tf.float32, shape=[], name='keep_nodes_probabilities')
         is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
+        #images = tf.placeholder(tf.float32, shape=[None, 64, 64, 1], name="input")
+        #tf.identity(images, name='input')
 
     with tf.variable_scope("convolutional_layer"):
         # stride = 1
@@ -64,11 +67,12 @@ def build_graph(top_k, images, labels=None):
 
     flatten = slim.flatten(max_pool_4)
 
-    with tf.variable_scope("fc_layer"):
+    with tf.variable_scope("fc_layer"):  # fully connected layer
         fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities), 1024, activation_fn=tf.nn.relu,
                                    scope='fc1')
         logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities), Data.CHARSET_SIZE,
                                       activation_fn=None, scope='fc2')
+        tf.identity(logits, name='output')
 
     with tf.variable_scope("loss"):
         loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
@@ -78,6 +82,7 @@ def build_graph(top_k, images, labels=None):
         # math_ops = tf.cast(tf.argmax(logits, 1), tf.int64)
 
         tensor_flag = tf.equal(math_ops, labels)
+        # compare result to actual label to get accuracy
         accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32))
 
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -123,7 +128,10 @@ def training():
 
         training_init_op = training_data.get_batch(batch_size=FLAGS.batch_size, aug=True)
         next_training_sample = training_data.get_next_element()
-        graph = build_graph(top_k=1, images=next_training_sample[0], labels=next_training_sample[1])
+
+        graph_input = next_training_sample[0]
+        #tf.identity(graph_input, name='input')
+        graph = build_graph(top_k=1, images=graph_input, labels=next_training_sample[1])
         sess.run(tf.global_variables_initializer())
         coordinator = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coordinator)
@@ -158,6 +166,7 @@ def training():
         start_time = datetime.now()
         eval_frequency = FLAGS.evaluation_step_frequency
         while not coordinator.should_stop():
+
             step = train()
             if step > FLAGS.max_steps:
                 break
@@ -180,8 +189,14 @@ def training():
         test_writer.close()
         saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=graph['step'])
         coordinator.join(threads)
-        sess.close()
 
+        #--- Saving model
+        savedmodel_dir = os.getcwd()
+        #with tf.variable_scope("accuracy"):
+        graph_output = tf.get_variable("fc_layer/output")
+        logger.info('Saving model...')
+        tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"input": graph_input}, outputs={"output": graph_output})
+        sess.close()
 
 def init_graph(img_file_name):
     print('Initializing graph...')
@@ -211,14 +226,13 @@ def get_predictor():
         cols, rows = predicted_indexes.shape
         list_length = rows if (rows < 6) else 6
         predicted_indexes2 = predicted_indexes[0, :list_length]
-        # for i in predicted_indexes2:
-        #     print("predicted indexes: " + i)
         print(" ".join(map(str, predicted_indexes2)))
         predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
         predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
         return predicted_chars, predicted_indexes2, predicted_probabilities2
 
     return recognizer
+
 
 def recognize_image(image_file_name):
     recognizer = get_predictor()
