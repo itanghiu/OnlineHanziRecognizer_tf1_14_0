@@ -47,8 +47,8 @@ def build_graph(top_k, images, labels=None):
     with tf.variable_scope("placeholder"):
         keep_nodes_probabilities = tf.placeholder(dtype=tf.float32, shape=[], name='keep_nodes_probabilities')
         is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
-        #images = tf.placeholder(tf.float32, shape=[None, 64, 64, 1], name="input")
-        #tf.identity(images, name='input')
+        # images = tf.placeholder(tf.float32, shape=[None, 64, 64, 1], name="input")
+        # tf.identity(images, name='input')
 
     with tf.variable_scope("convolutional_layer"):
         # stride = 1
@@ -130,7 +130,8 @@ def training():
         next_training_sample = training_data.get_next_element()
 
         graph_input = next_training_sample[0]
-        #tf.identity(graph_input, name='input')
+        tf.identity(graph_input, name='input')
+
         graph = build_graph(top_k=1, images=graph_input, labels=next_training_sample[1])
         sess.run(tf.global_variables_initializer())
         coordinator = tf.train.Coordinator()
@@ -190,21 +191,52 @@ def training():
         saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=graph['step'])
         coordinator.join(threads)
 
-        #--- Saving model
-        savedmodel_dir = os.getcwd()
-        #with tf.variable_scope("accuracy"):
-        graph_output = tf.get_variable("fc_layer/output")
-        logger.info('Saving model...')
-        tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"input": graph_input}, outputs={"output": graph_output})
+        # --- Saving model
+        savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
+        graph_output = graph['predicted_index_top_k']
+        tf.identity(graph_output, name='output')
+        tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"input": graph_input},
+                                   outputs={"output": graph_output})
         sess.close()
+
+
+def recognize_image_with_model(image_file_name):
+    print('Loading model...')
+    with tf.Session(graph=tf.Graph()) as sess:
+        savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
+        tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
+        graph = tf.get_default_graph()
+        print(graph.get_operations())
+        # sess.run('myOutput:0',
+        #        feed_dict={'myInput:0': ...
+        #sess, graph, training_init_op, saver, data = init_graph(image_file_name)
+        sess = tf.Session()
+        data = Data(image_file_name=image_file_name)
+        training_init_op = data.get_batch(batch_size=1, aug=True)
+        training_sample = data.get_next_element()
+        #graph = build_graph(top_k=3, images=training_sample[0], labels=training_sample[1])
+        #init = tf.global_variables_initializer()
+        sess.run(training_init_op)
+        predicted_probabilities, predicted_indexes = sess.run(
+            [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
+            feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
+
+        cols, rows = predicted_indexes.shape
+        list_length = rows if (rows < 6) else 6
+        predicted_indexes2 = predicted_indexes[0, :list_length]
+        # print(" ".join(map(str, predicted_indexes2)))
+        predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
+        predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
+        return predicted_chars, predicted_indexes2, predicted_probabilities2
+
 
 def init_graph(img_file_name):
     print('Initializing graph...')
     sess = tf.Session()
     data = Data(image_file_name=img_file_name)
     training_init_op = data.get_batch(batch_size=1, aug=True)
-    training_sample = data.get_next_element()
-    graph = build_graph(top_k=3, images=training_sample[0], labels=training_sample[1])
+    data_sample = data.get_next_element()
+    graph = build_graph(top_k=3, images=data_sample[0], labels=data_sample[1])
     saver = tf.train.Saver()
     init = tf.global_variables_initializer()
     sess.run(init)
@@ -213,6 +245,7 @@ def init_graph(img_file_name):
 
 
 def get_predictor():
+
     def recognizer(sess, graph, training_init_op, saver):
         ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
         if ckpt:
@@ -235,8 +268,8 @@ def get_predictor():
 
 
 def recognize_image(image_file_name):
-    recognizer = get_predictor()
     sess, graph, training_init_op, saver, data = init_graph(image_file_name)
+    recognizer = get_predictor()
     return recognizer(sess, graph, training_init_op, saver)
 
 
@@ -244,10 +277,18 @@ def main(_):
     print("Mode: %s " % FLAGS.mode)
     if FLAGS.mode == 'recognize_image':
         image_file_name = 'onlineCharacter5.png'
-        character, label, probability = recognize_image(image_file_name)
-        print('Label: %s  Probability: %s  Character: %s' % (label[0], probability[0], character[0]))
-        print('Label: %s  Probability: %s  Character: %s' % (label[1], probability[1], character[1]))
-        print('Label: %s  Probability: %s  Character: %s' % (label[2], probability[2], character[2]))
+        characters, labels, probabilities = recognize_image(image_file_name)
+        print('Label: %s  Probability: %s  Character: %s' % (labels[0], probabilities[0], characters[0]))
+        print('Label: %s  Probability: %s  Character: %s' % (labels[1], probabilities[1], characters[1]))
+        print('Label: %s  Probability: %s  Character: %s' % (labels[2], probabilities[2], characters[2]))
+
+    elif FLAGS.mode == 'recognize_with_model':
+        image_file_name = 'onlineCharacter5.png'
+        characters, labels, probabilities = recognize_image_with_model(image_file_name)
+        print('Label: %s  Probability: %s  Character: %s' % (labels[0], probabilities[0], characters[0]))
+        print('Label: %s  Probability: %s  Character: %s' % (labels[1], probabilities[1], characters[1]))
+        print('Label: %s  Probability: %s  Character: %s' % (labels[2], probabilities[2], characters[2]))
+
     elif FLAGS.mode == "training":
         training()
 
