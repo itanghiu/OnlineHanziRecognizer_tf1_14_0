@@ -8,12 +8,25 @@ import cnn
 import utils
 import logging
 import json
+from Data import Data
+import tensorflow as tf
+
+
 
 logger = logging.getLogger('app.py')
 logging.basicConfig(filename='webApp.log', level=logging.DEBUG)
 app = Flask(__name__)
-recognizer = cnn.get_predictor()
-sess, graph, training_init_op, saver, data = cnn.init_graph(utils.HAND_WRITTEN_CHAR_FILE_NAME)
+#recognizer = cnn.get_predictor()
+data = Data(image_file_name=utils.HAND_WRITTEN_CHAR_FILE_NAME)
+training_init_op = data.get_batch(batch_size=1, aug=True)
+data_sample = data.get_next_element()
+# graph = cnn.build_graph(top_k=3, images=data_sample[0], labels=data_sample[1])
+# saver = tf.train.Saver()
+# init = tf.global_variables_initializer()
+# sess = tf.Session()
+# sess.run(init)
+sess, graph, saver = cnn.init_graph(data_sample)
+
 
 @app.route('/')
 def index():
@@ -32,8 +45,7 @@ def add_char_image():
         image = utils.crop_image(image)
         hand_written_char_file_name = utils.HAND_WRITTEN_CHAR_FILE_NAME
         image.save(hand_written_char_file_name, 'PNG')
-        predicted_chars, predicted_indexes, predicted_probabilities = recognizer(sess, graph,
-                                                                                 training_init_op, saver)
+        predicted_chars, predicted_indexes, predicted_probabilities = cnn.recognize(sess, graph, training_init_op, saver)
         logger.info('Predicted chars: ' + ":".join(predicted_chars))
         logger.info('Predicted probabilities: ' + ", ".join(predicted_probabilities))
         result = dict(chars=predicted_chars, probabilities=predicted_probabilities)

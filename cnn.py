@@ -42,6 +42,112 @@ FLAGS = tf.app.flags.FLAGS
 # builds the map whose keys are labels and values characters
 label_char_dico = Data.get_label_char_dico(ImageDatasetGeneration.CHAR_LABEL_DICO_FILE_NAME)
 
+def training():
+    training_data = Data(data_dir=Data.DATA_TRAINING)
+    test_data = Data(data_dir=Data.DATA_TEST)
+    # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
+    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True,
+                                          log_device_placement=True)) as sess:
+
+        training_init_op = training_data.get_batch(batch_size=FLAGS.batch_size, aug=True)
+        next_training_sample = training_data.get_next_element()
+
+        graph_input = next_training_sample[0]
+        tf.identity(graph_input, name='input')
+
+        graph = build_graph(top_k=1, images=graph_input, labels=next_training_sample[1])
+        sess.run(tf.global_variables_initializer())
+        coordinator = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coordinator)
+        saver = tf.train.Saver()
+        train_writer = tf.summary.FileWriter(LOG_DIR + '/training', sess.graph)
+        test_writer = tf.summary.FileWriter(LOG_DIR + '/test')
+        start_step = 0
+        if FLAGS.restore:
+            ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+            if ckpt:
+                saver.restore(sess, ckpt)
+                start_step += int(ckpt.split('-')[-1])
+                print("Restoring from the checkpoint %s at step %d" % (ckpt, start_step))
+
+        logger.info('Start training')
+        logger.info("Training data size: %d" % training_data.size)
+        logger.info("Test data size: %d" % test_data.size)
+        print("Getting training data...")
+        sess.run(training_init_op)
+
+        def train():
+            start_timte = datetime.now()
+            # print("Getting training data took %s " % utils.r(start_time))
+            feed_dict = {graph['keep_nodes_probabilities']: 0.8, graph['is_training']: True}
+            _, loss, train_summary, step = sess.run([graph['train_op'], graph['loss'], graph['merged_summary_op'], graph['step']], feed_dict=feed_dict)
+            train_writer.add_summary(train_summary, step)
+            logger.info("Step #%s took %s. Loss: %.3f \n" % (step, utils.r(start_time), loss))
+            return step
+
+        start_time = datetime.now()
+        eval_frequency = FLAGS.evaluation_step_frequency
+        # starts training
+        while not coordinator.should_stop():
+
+            step = train()
+            if step > FLAGS.max_steps:
+                break
+
+            if (step % eval_frequency == 0) and (step >= eval_frequency):
+                feed_dict = {graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False}
+                accuracy_test, test_summary = sess.run([graph['accuracy'], graph['merged_summary_op']],
+                                                       feed_dict=feed_dict)
+                test_writer.add_summary(test_summary, step)
+                logger.info('---------- Step #%d   Test accuracy: %.2f ' % (int(step), accuracy_test))
+
+            if ((step % FLAGS.saving_step_frequency == 0) and (step != 0)):
+                logger.info('Saving checkpoint of step %s' % step)
+                saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'),
+                           global_step=graph['step'])
+
+        logger.info('Training Completed in  %s ' % utils.r(start_time))
+        coordinator.request_stop()
+        train_writer.close()
+        test_writer.close()
+        saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=graph['step'])
+        coordinator.join(threads)
+
+        # --- Saving model
+        savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
+        graph_output = graph['predicted_index_top_k']
+        tf.identity(graph_output, name='output')
+        tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"input": graph_input},
+                                   outputs={"output": graph_output})
+        sess.close()
+
+def recognize_image_with_model(image_file_name):
+    print('Loading model...')
+    with tf.Session(graph=tf.Graph()) as sess:
+        savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
+        tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
+        graph = tf.get_default_graph()
+        print(graph.get_operations())
+        # sess.run('myOutput:0',
+        #        feed_dict={'myInput:0': ...
+        sess = tf.Session()
+        data = Data(image_file_name=image_file_name)
+        training_init_op = data.get_batch(batch_size=1, aug=True)
+        training_sample = data.get_next_element()
+
+        sess.run(training_init_op)
+        predicted_probabilities, predicted_indexes = sess.run(
+            [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
+            feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
+
+        cols, rows = predicted_indexes.shape
+        list_length = rows if (rows < 6) else 6
+        predicted_indexes2 = predicted_indexes[0, :list_length]
+        # print(" ".join(map(str, predicted_indexes2)))
+        predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
+        predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
+        return predicted_chars, predicted_indexes2, predicted_probabilities2
+
 
 def build_graph(top_k, images, labels=None):
     with tf.variable_scope("placeholder"):
@@ -118,159 +224,50 @@ def build_graph(top_k, images, labels=None):
             'train_op': train_op
             }
 
-
-def training():
-    training_data = Data(data_dir=Data.DATA_TRAINING)
-    test_data = Data(data_dir=Data.DATA_TEST)
-    # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
-    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, allow_soft_placement=True,
-                                          log_device_placement=True)) as sess:
-
-        training_init_op = training_data.get_batch(batch_size=FLAGS.batch_size, aug=True)
-        next_training_sample = training_data.get_next_element()
-
-        graph_input = next_training_sample[0]
-        tf.identity(graph_input, name='input')
-
-        graph = build_graph(top_k=1, images=graph_input, labels=next_training_sample[1])
-        sess.run(tf.global_variables_initializer())
-        coordinator = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(sess=sess, coord=coordinator)
-        saver = tf.train.Saver()
-        train_writer = tf.summary.FileWriter(LOG_DIR + '/training', sess.graph)
-        test_writer = tf.summary.FileWriter(LOG_DIR + '/test')
-        start_step = 0
-        if FLAGS.restore:
-            ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
-            if ckpt:
-                saver.restore(sess, ckpt)
-                start_step += int(ckpt.split('-')[-1])
-                print("Restoring from the checkpoint %s at step %d" % (ckpt, start_step))
-
-        logger.info('Start training')
-        logger.info("Training data size: %d" % training_data.size)
-        logger.info("Test data size: %d" % test_data.size)
-        print("Getting training data...")
-        sess.run(training_init_op)
-
-        def train():
-            start_time = datetime.now()
-            # print("Getting training data took %s " % utils.r(start_time))
-            feed_dict = {graph['keep_nodes_probabilities']: 0.8, graph['is_training']: True}
-            _, loss, train_summary, step = sess.run(
-                [graph['train_op'], graph['loss'], graph['merged_summary_op'], graph['step']],
-                feed_dict=feed_dict)
-            train_writer.add_summary(train_summary, step)
-            logger.info("Step #%s took %s. Loss: %.3f \n" % (step, utils.r(start_time), loss))
-            return step
-
-        start_time = datetime.now()
-        eval_frequency = FLAGS.evaluation_step_frequency
-        while not coordinator.should_stop():
-
-            step = train()
-            if step > FLAGS.max_steps:
-                break
-
-            if (step % eval_frequency == 0) and (step >= eval_frequency):
-                feed_dict = {graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False}
-                accuracy_test, test_summary = sess.run([graph['accuracy'], graph['merged_summary_op']],
-                                                       feed_dict=feed_dict)
-                test_writer.add_summary(test_summary, step)
-                logger.info('---------- Step #%d   Test accuracy: %.2f ' % (int(step), accuracy_test))
-
-            if ((step % FLAGS.saving_step_frequency == 0) and (step != 0)):
-                logger.info('Saving checkpoint of step %s' % step)
-                saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'),
-                           global_step=graph['step'])
-
-        logger.info('Training Completed in  %s ' % utils.r(start_time))
-        coordinator.request_stop()
-        train_writer.close()
-        test_writer.close()
-        saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=graph['step'])
-        coordinator.join(threads)
-
-        # --- Saving model
-        savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
-        graph_output = graph['predicted_index_top_k']
-        tf.identity(graph_output, name='output')
-        tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"input": graph_input},
-                                   outputs={"output": graph_output})
-        sess.close()
-
-
-def recognize_image_with_model(image_file_name):
-    print('Loading model...')
-    with tf.Session(graph=tf.Graph()) as sess:
-        savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
-        tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
-        graph = tf.get_default_graph()
-        print(graph.get_operations())
-        # sess.run('myOutput:0',
-        #        feed_dict={'myInput:0': ...
-        #sess, graph, training_init_op, saver, data = init_graph(image_file_name)
-        sess = tf.Session()
-        data = Data(image_file_name=image_file_name)
-        training_init_op = data.get_batch(batch_size=1, aug=True)
-        training_sample = data.get_next_element()
-        #graph = build_graph(top_k=3, images=training_sample[0], labels=training_sample[1])
-        #init = tf.global_variables_initializer()
-        sess.run(training_init_op)
-        predicted_probabilities, predicted_indexes = sess.run(
-            [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
-            feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
-
-        cols, rows = predicted_indexes.shape
-        list_length = rows if (rows < 6) else 6
-        predicted_indexes2 = predicted_indexes[0, :list_length]
-        # print(" ".join(map(str, predicted_indexes2)))
-        predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
-        predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
-        return predicted_chars, predicted_indexes2, predicted_probabilities2
-
-
-def init_graph(img_file_name):
+def __init__(self, data_sample):
     print('Initializing graph...')
-    sess = tf.Session()
-    data = Data(image_file_name=img_file_name)
-    training_init_op = data.get_batch(batch_size=1, aug=True)
-    data_sample = data.get_next_element()
+    self.graph = build_graph(top_k=3, images=data_sample[0], labels=data_sample[1])
+    self.saver = tf.train.Saver()
+    init = tf.global_variables_initializer()
+    self.sess = tf.Session()
+    self.sess.run(init)
+    print('End of graph initialization.')
+
+def init_graph(data_sample):
+    print('Initializing graph...')
     graph = build_graph(top_k=3, images=data_sample[0], labels=data_sample[1])
     saver = tf.train.Saver()
     init = tf.global_variables_initializer()
+    sess = tf.Session()
     sess.run(init)
     print('End of graph initialization.')
-    return (sess, graph, training_init_op, saver, data)
+    return (sess, graph, saver)
 
+def recognize(sess, graph, training_init_op, saver):
+    ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+    if ckpt:
+        saver.restore(sess, ckpt)
 
-def get_predictor():
+    sess.run(training_init_op)
+    predicted_probabilities, predicted_indexes = sess.run(
+        [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
+        feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
 
-    def recognizer(sess, graph, training_init_op, saver):
-        ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
-        if ckpt:
-            saver.restore(sess, ckpt)
-
-        sess.run(training_init_op)
-        predicted_probabilities, predicted_indexes = sess.run(
-            [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
-            feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
-
-        cols, rows = predicted_indexes.shape
-        list_length = rows if (rows < 6) else 6
-        predicted_indexes2 = predicted_indexes[0, :list_length]
-        print(" ".join(map(str, predicted_indexes2)))
-        predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
-        predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
-        return predicted_chars, predicted_indexes2, predicted_probabilities2
-
-    return recognizer
-
+    cols, rows = predicted_indexes.shape
+    list_length = rows if (rows < 6) else 6
+    predicted_indexes2 = predicted_indexes[0, :list_length]
+    print(" ".join(map(str, predicted_indexes2)))
+    predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
+    predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
+    return predicted_chars, predicted_indexes2, predicted_probabilities2
 
 def recognize_image(image_file_name):
-    sess, graph, training_init_op, saver, data = init_graph(image_file_name)
-    recognizer = get_predictor()
-    return recognizer(sess, graph, training_init_op, saver)
+    data = Data(image_file_name=image_file_name)
+    training_init_op = data.get_batch(batch_size=1, aug=True)
+    data_sample = data.get_next_element()
+    sess, graph, saver = init_graph(data_sample)
+    cnn = cnn(data_sample)
+    return recognize(sess, graph, training_init_op, saver)
 
 
 def main(_):
@@ -298,3 +295,26 @@ if __name__ == "__main__":  # Learning mode
     tf.app.run()
 else:  # webServer mode
     tf.app.flags.DEFINE_string('checkpoint_dir', Data.CHECKPOINT, 'the checkpoint dir')
+
+
+# def get_predictor():
+#
+#     def recognizer(sess, graph, training_init_op, saver):
+#         ckpt = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+#         if ckpt:
+#             saver.restore(sess, ckpt)
+#
+#         sess.run(training_init_op)
+#         predicted_probabilities, predicted_indexes = sess.run(
+#             [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
+#             feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
+#
+#         cols, rows = predicted_indexes.shape
+#         list_length = rows if (rows < 6) else 6
+#         predicted_indexes2 = predicted_indexes[0, :list_length]
+#         print(" ".join(map(str, predicted_indexes2)))
+#         predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
+#         predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
+#         return predicted_chars, predicted_indexes2, predicted_probabilities2
+#
+#     return recognizer
