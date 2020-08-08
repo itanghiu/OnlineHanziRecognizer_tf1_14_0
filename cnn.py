@@ -264,10 +264,10 @@ class Cnn:
     @staticmethod
     def recognize_image(image_file_name):
         data = Data(image_file_name=image_file_name)
-        training_init_op = data.get_batch(batch_size=1, aug=True)
+        init_iterator_operation = data.get_batch(batch_size=1, aug=True)
         data_sample = data.get_next_element()
         cnn = Cnn(data_sample)
-        return cnn.recognize(training_init_op)
+        return cnn.recognize(init_iterator_operation)
 
     @staticmethod
     def start_app():

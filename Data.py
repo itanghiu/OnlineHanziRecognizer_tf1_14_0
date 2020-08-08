@@ -83,6 +83,7 @@ class Data:
     def size(self):
         return len(self.labels)
 
+    # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
     def get_batch(self, batch_size, aug=False):
 
         def _parse_function(filename):
@@ -105,8 +106,8 @@ class Data:
         dataset = tf.data.Dataset.zip((image_file_path_dataset, label_dataset)).shuffle(500).repeat().batch(batch_size)
 
         self.iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
-        training_init_op = self.iterator.make_initializer(dataset)
-        return training_init_op
+        init_iterator_operation = self.iterator.make_initializer(dataset) # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
+        return init_iterator_operation
 
     def get_next_element(self):
         next_element = self.iterator.get_next()
