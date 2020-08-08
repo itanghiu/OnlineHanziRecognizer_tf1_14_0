@@ -242,12 +242,12 @@ class Cnn:
                 'train_op': train_op
                 }
 
-    def recognize(self, training_init_op):
+    def recognize(self, init_iterator_op):
         ckpt = tf.train.latest_checkpoint(self.FLAGS.checkpoint_dir)
         if ckpt:
             self.saver.restore(self.sess, ckpt)
 
-        self.sess.run(training_init_op)
+        self.sess.run(init_iterator_op)
         graph = self.graph
         predicted_probabilities, predicted_indexes = self.sess.run(
             [graph['predicted_val_top_k'], graph['predicted_index_top_k']],
@@ -264,9 +264,9 @@ class Cnn:
     @staticmethod
     def recognize_image(image_file_name):
         data = Data(image_file_name=image_file_name)
-        init_iterator_operation = data.get_batch(batch_size=1, aug=True)
         data_sample = data.get_next_element()
         cnn = Cnn(data_sample)
+        init_iterator_operation = data.get_batch(batch_size=1, aug=True)
         return cnn.recognize(init_iterator_operation)
 
     @staticmethod
