@@ -6,16 +6,7 @@ import codecs
 import numpy
 from datetime import datetime
 
-
 class Data:
-
-    #DATA_ROOT_DIR = '/DATA/CASIA/onlineHanziRecognizer'
-
-    #CHECKPOINT = 'E:\TENSORFLOW_CHECKPOINT\TMP'
-    # DATA_ROOT_DIR = '/TEMP_DATA_SET'
-    #DATA_ROOT_DIR = 'E:\DEV\OnlineHanziRecognizer_tf'
-    # DATA_TRAINING = DATA_ROOT_DIR + '/training'
-    # DATA_TEST = DATA_ROOT_DIR + '/test'
 
     CHECKPOINT = 'E:\DEV\TENSORFLOW\OnlineHanziRecognizer_tf\\new_checkpoint'
     DATA_ROOT_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'

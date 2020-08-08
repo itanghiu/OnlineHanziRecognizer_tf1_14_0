@@ -22,8 +22,7 @@ def main(_):
         print('Label: %s  Probability: %s  Character: %s' % (labels[2], probabilities[2], characters[2]))
 
     elif FLAGS.mode == "training":
-        cnn = Cnn()
-        cnn.training()
+        Cnn.training()
 
 
 if __name__ == "__main__":  # Learning mode
