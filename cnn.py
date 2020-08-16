@@ -100,13 +100,20 @@ class Cnn:
             #logger.info("Training data size: %d" % training_data.size)
             #logger.info("Test data size: %d" % test_data.size)
             print("Getting training data...")
-            graph = tf.Graph()
+            graph = sess.graph
+            keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
+            is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
+            print("nodes:", [n.name for n in graph.as_graph_def().node])
 
             def train():
                 start_time = datetime.now()
                 # print("Getting training data took %s " % utils.r(start_time))
-                feed_dict = {graph_map['keep_nodes_probabilities']: 0.8, graph_map['is_training']: True}
+                #loss = graph.get_tensor_by_name('loss/loss:0')
+
+                feed_dict = {keep_nodes_probabilities_ph: 0.8, is_training_ph: True}
                 _, loss, train_summary, step = sess.run([graph_map['train_op'], graph_map['loss'], graph_map['merged_summary_op'], graph_map['step']], feed_dict=feed_dict)
+                #_, loss, train_summary, step = sess.run([graph_map['train_op'], loss, graph_map['merged_summary_op'], graph_map['step']], feed_dict=feed_dict)
+
                 train_writer.add_summary(train_summary, step)
                 logger.info("Step #%s took %s. Loss: %.3f \n" % (step, utils.r(start_time), loss))
                 return step
@@ -121,7 +128,7 @@ class Cnn:
                     break
 
                 if (step % eval_frequency == 0) and (step >= eval_frequency):
-                    feed_dict = {graph_map['keep_nodes_probabilities']: 1.0, graph_map['is_training']: False}
+                    feed_dict = {keep_nodes_probabilities_ph: 1.0, is_training_ph: False}
                     accuracy_test, test_summary = sess.run([graph_map['accuracy'], graph_map['merged_summary_op']],
                                                            feed_dict=feed_dict)
                     test_writer.add_summary(test_summary, step)
@@ -158,8 +165,8 @@ class Cnn:
     @staticmethod
     def build_main_graph(images):
 
-        keep_nodes_probabilities = tf.placeholder(dtype=tf.float32, shape=[], name='keep_nodes_probabilities')
-        is_training = tf.placeholder(dtype=tf.bool, shape=[], name='train_flag')
+        keep_nodes_probabilities_ph = tf.placeholder(dtype=tf.float32, shape=[], name='keep_nodes_probabilities_ph')
+        is_training_ph = tf.placeholder(dtype=tf.bool, shape=[], name='is_training_ph')
 
         with tf.variable_scope("convolutional_layer"):
             # stride = 1
@@ -179,34 +186,32 @@ class Cnn:
         flatten = slim.flatten(max_pool_4)
 
         with tf.variable_scope("fc_layer"):  # fully connected layer
-            fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities), 1024, activation_fn=tf.nn.relu,
+            fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities_ph), 1024, activation_fn=tf.nn.relu,
                                        scope='fc1')
-            logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities), Data.CHARSET_SIZE,
+            logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities_ph), Data.CHARSET_SIZE,
                                           activation_fn=None, scope='fc2')
             tf.identity(logits, name='output')
 
-        return (logits, keep_nodes_probabilities, is_training, images)
+        return logits
 
     @staticmethod
     def build_graph_for_recognition(top_k, images):
 
-        logits, keep_nodes_probabilities, is_training, images = Cnn.build_main_graph(images)
+        logits = Cnn.build_main_graph(images)
         probabilities = tf.nn.softmax(logits)
         merged_summary_op = tf.summary.merge_all()
         predicted_probabilities_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k, name='predicted_index_top_k')
 
         return {'images': images,
-                'keep_nodes_probabilities': keep_nodes_probabilities,
                 'predicted_probabilities_top_k': predicted_probabilities_top_k,
                 'predicted_index_top_k': predicted_index_top_k,
-                'merged_summary_op': merged_summary_op,
-                'is_training': is_training
+                'merged_summary_op': merged_summary_op
                 }
 
     @staticmethod
     def build_graph_for_training(top_k, images, labels):
 
-        logits, keep_nodes_probabilities, is_training, images_ph = Cnn.build_main_graph(images)
+        logits = Cnn.build_main_graph(images)
         with tf.variable_scope("loss"):
             loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
 
@@ -237,11 +242,9 @@ class Cnn:
         predicted_probabilities_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k)
         tf.identity(predicted_probabilities_top_k, name='predicted_probabilities_top_k')
         tf.identity(predicted_index_top_k, name='predicted_index_top_k')
-        # accuracy_in_top_k = tf.reduce_mean(tf.cast(tf.nn.in_top_k(probabilities, labels, top_k), tf.float32))
+        tf.identity(loss, name='loss')
 
-        return {'images_ph': images_ph,
-                'labels': labels,
-                'keep_nodes_probabilities': keep_nodes_probabilities,
+        return {
                 'step': step,
                 "optimizer": optimizer,
                 'loss': loss,
@@ -249,10 +252,10 @@ class Cnn:
                 'predicted_probabilities_top_k': predicted_probabilities_top_k,
                 'predicted_index_top_k': predicted_index_top_k,
                 'merged_summary_op': merged_summary_op,
-                'is_training': is_training,
                 'train_op': train_op,
                 'logits': logits
                 }
+
 
     def recognize(self):
 
@@ -261,9 +264,12 @@ class Cnn:
             self.saver.restore(self.sess, ckpt)
 
         graph_map = self.graph_map
+        graph = self.sess.graph
+        keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
+        is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
         predicted_probabilities, predicted_indexes = self.sess.run(
             [graph_map['predicted_probabilities_top_k'], graph_map['predicted_index_top_k']],
-            feed_dict={graph_map['keep_nodes_probabilities']: 1.0, graph_map['is_training']: False})
+            feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False})
 
         cols, rows = predicted_indexes.shape
         list_length = rows if (rows < 6) else 6
