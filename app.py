@@ -45,7 +45,7 @@ def add_char_image():
         image.save(hand_written_char_file_name, 'PNG')
         labels = numpy.array([0])
         cnn.sess.run(init_iterator_operation, feed_dict={images_ph: [hand_written_char_file_name], labels_ph: labels, batch_size_ph: 1})
-        predicted_chars, predicted_indexes, predicted_probabilities = cnn.recognize(init_iterator_operation, image)
+        predicted_chars, predicted_indexes, predicted_probabilities = cnn.recognize()
         logger.info('Predicted chars: ' + ":".join(predicted_chars))
         logger.info('Predicted probabilities: ' + ", ".join(predicted_probabilities))
         result = dict(chars=predicted_chars, probabilities=predicted_probabilities)

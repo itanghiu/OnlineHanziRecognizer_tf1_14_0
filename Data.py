@@ -24,6 +24,11 @@ class Data:
         self.random_contrast = random_contrast
 
 
+    def initialize(self, sess, images, labels, batch_size):
+
+        training_init_op = self.get_batch(aug=True)
+        sess.run(training_init_op, feed_dict={self.images_ph: images, self.labels_ph: labels, self.batch_size_ph: batch_size})
+
     @staticmethod
     def augmentation(self, images):
 
@@ -74,12 +79,41 @@ class Data:
         dataset = tf.data.Dataset.zip((image_file_path_dataset, label_dataset)).shuffle(500).repeat().batch(self.batch_size_ph)
 
         self.iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
-        init_iterator_operation = self.iterator.make_initializer(dataset) # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
+        init_iterator_operation = self.iterator.make_initializer(dataset, name='dataset_init') # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
         return init_iterator_operation
+
+    def get_batch2(self, aug=False):
+
+        def _parse_function(filename):
+            # convert to grey
+            image = tf.read_file(filename)
+            image_grey = tf.image.convert_image_dtype(tf.image.decode_png(image, channels=1), tf.float32)
+            if aug:
+                image_grey = self.augmentation(self, image_grey)
+
+            # standardize the image size .
+            standard_size = tf.constant([Data.IMAGE_SIZE, Data.IMAGE_SIZE], dtype=tf.int32)
+            images = tf.image.resize_images(image_grey, standard_size)
+            return images
+
+        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.images_ph)
+        label_dataset = tf.data.Dataset.from_tensor_slices(self.labels_ph)
+        image_file_path_dataset = image_file_path_dataset.map(_parse_function)
+
+        # zip the x and y training data together and shuffle, batch etc.
+        dataset = tf.data.Dataset.zip((image_file_path_dataset, label_dataset)).shuffle(500).repeat().batch(self.batch_size_ph)
+
+        self.iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
+        #init_iterator_operation = self.iterator.make_initializer(dataset, name='dataset_init') # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
+        return self.iterator, dataset
 
     def get_next_element(self):
         next_element = self.iterator.get_next()
         return next_element
+
+# def get_dataset_init_op(self):
+#     dataset_init_op = self.iterator.make_initializer(dataset, name='dataset_init')
+#     return dataset_init_op
 
     def load_char_label_dico(filePath):
 
