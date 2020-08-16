@@ -202,8 +202,7 @@ class Cnn:
         merged_summary_op = tf.summary.merge_all()
         predicted_probabilities_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k, name='predicted_index_top_k')
 
-        return {'images': images,
-                'predicted_probabilities_top_k': predicted_probabilities_top_k,
+        return { 'predicted_probabilities_top_k': predicted_probabilities_top_k,
                 'predicted_index_top_k': predicted_index_top_k,
                 'merged_summary_op': merged_summary_op
                 }
@@ -231,7 +230,7 @@ class Cnn:
         learning_rate = tf.train.exponential_decay(learning_rate=LEARNING_RATE, global_step=step, decay_rate=0.97,
                                                    decay_steps=2000, staircase=True)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        # the step will be incremented after the call to optimizer.minize()
+        # the step will be incremented after the call to optimizer.minimize()
         train_op = slim.learning.create_train_op(loss, optimizer, global_step=step)
 
         probabilities = tf.nn.softmax(logits)
