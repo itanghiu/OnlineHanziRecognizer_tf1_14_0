@@ -14,20 +14,18 @@ class Data:
     CHARSET_SIZE = 3755
     IMAGE_SIZE = 64
 
-    def __init__(self, images_ph=None, labels_ph=None, batch_size_ph=1, random_flip_up_down=False, random_brightness=False, random_contrast=True):
+    #def __init__(self, images_ph=None, labels_ph=None, batch_size_ph=1, random_flip_up_down=False, random_brightness=False, random_contrast=True):
+    def __init__(self, random_flip_up_down=False, random_brightness=False, random_contrast=True):
 
-        self.images_ph = images_ph
-        self.labels_ph = labels_ph
-        self.batch_size_ph = batch_size_ph
+        # self.images_ph = images_ph
+        # self.labels_ph = labels_ph
+        # self.batch_size_ph = batch_size_ph
+        self.batch_size_ph = tf.placeholder(tf.int64, name='batch_size_ph')
+        self.images_ph = tf.placeholder(dtype=tf.string, name='images_ph')
+        self.labels_ph = tf.placeholder(dtype=tf.int32, name='labels_ph')
         self.random_flip_up_down = random_flip_up_down
         self.random_brightness = random_brightness
         self.random_contrast = random_contrast
-
-
-    def initialize(self, sess, images, labels, batch_size):
-
-        training_init_op = self.get_batch(aug=True)
-        sess.run(training_init_op, feed_dict={self.images_ph: images, self.labels_ph: labels, self.batch_size_ph: batch_size})
 
     @staticmethod
     def augmentation(self, images):
@@ -79,8 +77,8 @@ class Data:
         dataset = tf.data.Dataset.zip((image_file_path_dataset, label_dataset)).shuffle(500).repeat().batch(self.batch_size_ph)
 
         self.iterator = tf.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
-        init_iterator_operation = self.iterator.make_initializer(dataset, name='dataset_init') # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
-        return init_iterator_operation
+        init_iterator_op = self.iterator.make_initializer(dataset, name='init_iterator_op') # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
+        return init_iterator_op
 
     def get_batch2(self, aug=False):
 
@@ -148,3 +146,8 @@ class Data:
             labels.append(img_dir_name)
         print("self.labels size: %d" % len(labels))
         return image_file_paths, labels
+
+    # def initialize(self, sess, images, labels, batch_size):
+    #
+    #     training_init_op = self.get_batch(aug=True)
+    #     sess.run(training_init_op, feed_dict={self.images_ph: images, self.labels_ph: labels, self.batch_size_ph: batch_size})

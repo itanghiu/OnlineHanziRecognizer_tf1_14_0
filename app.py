@@ -24,7 +24,9 @@ init_iterator_operation = data.get_batch(aug=True)
 data_sample = data.get_next_element()
 image_tensor = data_sample[0]
 labels_tensor = data_sample[1]
-cnn = Cnn(image_tensor)
+cnn = Cnn()
+cnn.build_graph_for_recognition(top_k=3, image_tensor=image_tensor)
+cnn.init()
 
 @app.route('/')
 def index():

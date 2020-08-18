@@ -4,6 +4,7 @@ import logging
 import tensorflow as tf
 import utils
 import numpy
+import sys
 import shutil
 import ImageDatasetGeneration
 from Data import Data
@@ -51,10 +52,12 @@ class Cnn:
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
     FLAGS = tf.app.flags.FLAGS
 
-    def __init__(self, image_tensor=None):
+    def __init__(self):
+        print('Instantiating...')
+        self.data = Data()
 
+    def init(self):
         print('Initializing graph...')
-        self.graph_map = self.build_graph_for_recognition(top_k=3, images=image_tensor)
         self.saver = tf.train.Saver()
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
@@ -65,14 +68,12 @@ class Cnn:
     def training():
 
         FLAGS = Cnn.FLAGS
-        batch_size_ph = tf.placeholder(tf.int64, name='batch_size_ph')
-        images_ph = tf.placeholder(dtype=tf.string,  name='images_ph')
-        labels_ph = tf.placeholder(dtype=tf.int32, name='labels_ph')
-        training_data = Data(images_ph=images_ph, labels_ph=labels_ph, batch_size_ph=batch_size_ph)
+        cnn = Cnn()
+        data = cnn.data
         test_data = Data()
         images, labels = Data.prepare_data_for_training(Data.DATA_TRAINING)
-        training_init_op = training_data.get_batch(aug=True)
-        next_training_sample = training_data.get_next_element()
+        training_init_op = cnn.data.get_batch(aug=True)
+        next_training_sample = cnn.data.get_next_element()
         input_tensor = next_training_sample[0]
         labels_tensor = next_training_sample[1]
 
@@ -80,8 +81,9 @@ class Cnn:
         with tf.Session(config=tf.ConfigProto(gpu_options=Cnn.gpu_options, allow_soft_placement=True,
                                               log_device_placement=True)) as sess:
 
-            sess.run(training_init_op, feed_dict={images_ph: images, labels_ph: labels, batch_size_ph: FLAGS.batch_size})
-            graph_map = Cnn.build_graph_for_training(top_k=1, images=input_tensor, labels=labels_tensor)# returned value graph is a dictionary
+            sess.run(training_init_op, feed_dict={data.images_ph: images, data.labels_ph: labels, data.batch_size_ph: FLAGS.batch_size})
+            cnn.build_graph_for_training(top_k=1, images=input_tensor, labels=labels_tensor)# returned value graph is a dictionary
+            #cnn.init()
             sess.run(tf.global_variables_initializer())
 
             coordinator = tf.train.Coordinator()
@@ -103,16 +105,13 @@ class Cnn:
             graph = sess.graph
             keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
             is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
-            print("nodes:", [n.name for n in graph.as_graph_def().node])
+            #print("nodes:", [n.name for n in graph.as_graph_def().node])
 
             def train():
                 start_time = datetime.now()
                 # print("Getting training data took %s " % utils.r(start_time))
-                #loss = graph.get_tensor_by_name('loss/loss:0')
-
                 feed_dict = {keep_nodes_probabilities_ph: 0.8, is_training_ph: True}
-                _, loss, train_summary, step = sess.run([graph_map['train_op'], graph_map['loss'], graph_map['merged_summary_op'], graph_map['step']], feed_dict=feed_dict)
-                #_, loss, train_summary, step = sess.run([graph_map['train_op'], loss, graph_map['merged_summary_op'], graph_map['step']], feed_dict=feed_dict)
+                _, loss, train_summary, step = sess.run([cnn.train_op, cnn.loss, cnn.merged_summary_op, cnn.step], feed_dict=feed_dict)
 
                 train_writer.add_summary(train_summary, step)
                 logger.info("Step #%s took %s. Loss: %.3f \n" % (step, utils.r(start_time), loss))
@@ -129,21 +128,21 @@ class Cnn:
 
                 if (step % eval_frequency == 0) and (step >= eval_frequency):
                     feed_dict = {keep_nodes_probabilities_ph: 1.0, is_training_ph: False}
-                    accuracy_test, test_summary = sess.run([graph_map['accuracy'], graph_map['merged_summary_op']],
-                                                           feed_dict=feed_dict)
+                    accuracy_test, test_summary = sess.run([cnn.accuracy, cnn.merged_summary_op], feed_dict=feed_dict)
                     test_writer.add_summary(test_summary, step)
                     logger.info('---------- Step #%d   Test accuracy: %.2f ' % (int(step), accuracy_test))
 
                 if ((step % FLAGS.saving_step_frequency == 0) and (step != 0)):
                     logger.info('Saving checkpoint of step %s' % step)
                     saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'),
-                               global_step=graph_map['step'])
+                               #global_step=graph_map['step'])
+                               global_step = cnn.step)
 
             logger.info('Training Completed in  %s ' % utils.r(start_time))
             coordinator.request_stop()
             train_writer.close()
             test_writer.close()
-            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=graph_map['step'])
+            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=cnn.step)
             coordinator.join(threads)
 
             # --- Saving model
@@ -155,22 +154,22 @@ class Cnn:
                     shutil.rmtree(savedmodel_dir)
                 except OSError as e:
                     print("Error: %s : %s" % (savedmodel_dir, e.strerror))
-            output = graph_map['predicted_index_top_k']
+            #output = cnn.predicted_index_op
+            output = graph.get_tensor_by_name('probability_and_index:1')
             tf.identity(output, name='output')
-            tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"images_ph": images_ph, "labels_ph": labels_ph, "batch_size_ph": batch_size_ph},
+            tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"images_ph": data.images_ph, "labels_ph": data.labels_ph, "batch_size_ph": data.batch_size_ph},
                                        outputs={"output": output})
             logger.info('End saving model.')
             sess.close()
 
-    @staticmethod
-    def build_main_graph(images):
+    def build_main_graph(self, image_tensor):
 
         keep_nodes_probabilities_ph = tf.placeholder(dtype=tf.float32, shape=[], name='keep_nodes_probabilities_ph')
         is_training_ph = tf.placeholder(dtype=tf.bool, shape=[], name='is_training_ph')
 
         with tf.variable_scope("convolutional_layer"):
             # stride = 1
-            conv3_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
+            conv3_1 = slim.conv2d(image_tensor, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
             max_pool_1 = slim.max_pool2d(conv3_1, [2, 2], [2, 2], padding='SAME', scope='pool1')
 
             conv3_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
@@ -188,73 +187,90 @@ class Cnn:
         with tf.variable_scope("fc_layer"):  # fully connected layer
             fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities_ph), 1024, activation_fn=tf.nn.relu,
                                        scope='fc1')
-            logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities_ph), Data.CHARSET_SIZE,
+            self.logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities_ph), Data.CHARSET_SIZE,
                                           activation_fn=None, scope='fc2')
-            tf.identity(logits, name='output')
+            tf.identity(self.logits, name='output')
 
-        return logits
 
-    @staticmethod
-    def build_graph_for_recognition(top_k, images):
+    def build_graph_for_recognition(self, top_k, image_tensor):
 
-        logits = Cnn.build_main_graph(images)
-        probabilities = tf.nn.softmax(logits)
+        self.build_main_graph(image_tensor)
+        probabilities = tf.nn.softmax(self.logits)
         merged_summary_op = tf.summary.merge_all()
-        predicted_probabilities_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k, name='predicted_index_top_k')
+        #self.predicted_probability_op, self.predicted_index_op = tf.nn.top_k(probabilities, k=top_k)
+        tf.nn.top_k(probabilities, k=top_k, name='probability_and_index')
 
-        return { 'predicted_probabilities_top_k': predicted_probabilities_top_k,
-                'predicted_index_top_k': predicted_index_top_k,
-                'merged_summary_op': merged_summary_op
-                }
+    def build_graph_for_training(self, top_k, images, labels):
 
-    @staticmethod
-    def build_graph_for_training(top_k, images, labels):
-
-        logits = Cnn.build_main_graph(images)
+        self.build_main_graph(images)
         with tf.variable_scope("loss"):
-            loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=labels))
 
         with tf.variable_scope("accuracy"):
-            math_ops = tf.cast(tf.argmax(logits, 1), tf.int32)
+            math_ops = tf.cast(tf.argmax(self.logits, 1), tf.int32)
             #math_ops = tf.cast(tf.argmax(logits, 1), tf.int64)
             tensor_flag = tf.equal(math_ops, labels)
             # compare result to actual label to get accuracy
-            accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32))
+            self.accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32))
 
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         if update_ops:
             updates = tf.group(*update_ops)
-            loss = control_flow_ops.with_dependencies([updates], loss)
+            self.loss = control_flow_ops.with_dependencies([updates], self.loss)
 
-        step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
-        learning_rate = tf.train.exponential_decay(learning_rate=LEARNING_RATE, global_step=step, decay_rate=0.97,
+        self.step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
+        learning_rate = tf.train.exponential_decay(learning_rate=LEARNING_RATE, global_step=self.step, decay_rate=0.97,
                                                    decay_steps=2000, staircase=True)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         # the step will be incremented after the call to optimizer.minimize()
-        train_op = slim.learning.create_train_op(loss, optimizer, global_step=step)
+        self.train_op = slim.learning.create_train_op(self.loss, optimizer, global_step=self.step)
 
-        probabilities = tf.nn.softmax(logits)
+        probabilities = tf.nn.softmax(self.logits)
 
-        tf.summary.scalar('loss', loss)
-        tf.summary.scalar('accuracy', accuracy)
-        merged_summary_op = tf.summary.merge_all()
-        predicted_probabilities_top_k, predicted_index_top_k = tf.nn.top_k(probabilities, k=top_k)
-        tf.identity(predicted_probabilities_top_k, name='predicted_probabilities_top_k')
-        tf.identity(predicted_index_top_k, name='predicted_index_top_k')
-        tf.identity(loss, name='loss')
+        tf.summary.scalar('accuracy', self.accuracy)
+        self.merged_summary_op = tf.summary.merge_all()
 
-        return {
-                'step': step,
-                "optimizer": optimizer,
-                'loss': loss,
-                'accuracy': accuracy,
-                'predicted_probabilities_top_k': predicted_probabilities_top_k,
-                'predicted_index_top_k': predicted_index_top_k,
-                'merged_summary_op': merged_summary_op,
-                'train_op': train_op,
-                'logits': logits
-                }
+        predicted_probability_op, predicted_index_op = tf.nn.top_k(probabilities, k=top_k, name='probability_and_index')
+        # To retrieve predicted_probability_op, predicted_index_op using get_tensor_from_name() :
+        # predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
+        # predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
 
+    # @staticmethod
+    def recognize_image_with_model(image_file_name):
+
+        cnn = Cnn()
+        print('Loading model...')
+        graph = tf.Graph()
+        with graph.as_default():
+            with tf.Session(graph=graph) as sess:
+                savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
+                tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
+                print(graph.get_operations())
+                images_ph = graph.get_tensor_by_name('images_ph:0')
+                labels_ph = graph.get_tensor_by_name('labels_ph:0')
+                batch_size_ph = graph.get_tensor_by_name('batch_size_ph:0')
+
+                # initialize data
+                init_iterator_operation = graph.get_operation_by_name('init_iterator_op')
+                image_file_paths = [image_file_name]
+                labels = numpy.array([0])
+                sess.run(init_iterator_operation, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph:1})
+
+                # Compute inference for dataset
+                predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
+                predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
+                keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
+                is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
+
+                predicted_probability, predicted_index = sess.run(
+                    [predicted_probability_op, predicted_index_op],
+                    feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False})
+                cols, rows = predicted_index.shape
+                list_length = rows if (rows < 6) else 6
+                predicted_indexes2 = predicted_index[0, :list_length]
+                predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
+                predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probability[0, :list_length]]
+                return predicted_chars, predicted_indexes2, predicted_probabilities2
 
     def recognize(self):
 
@@ -262,12 +278,15 @@ class Cnn:
         if ckpt:
             self.saver.restore(self.sess, ckpt)
 
-        graph_map = self.graph_map
         graph = self.sess.graph
         keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
         is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
+        # in order to know the names ('TopKV2:0' and 'TopKV2:1') of the 2 tensors below, I had to put a stop point and visualize the self.predicted_index_op and self.predicted_probability_op
+        predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
+        predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
+
         predicted_probabilities, predicted_indexes = self.sess.run(
-            [graph_map['predicted_probabilities_top_k'], graph_map['predicted_index_top_k']],
+            [predicted_probability_op, predicted_index_op],
             feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False})
 
         cols, rows = predicted_indexes.shape
@@ -279,73 +298,71 @@ class Cnn:
         return predicted_chars, predicted_indexes2, predicted_probabilities2
 
     @staticmethod
-    def recognize_image_with_model(image_file_name):
-
-        print('Loading model...')
-        graph = tf.Graph()
-        with graph.as_default():
-            with tf.Session(graph=graph) as sess:
-                savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
-                tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
-
-                #graph = tf.get_default_graph()
-                print(graph.get_operations())
-                sess = tf.Session()
-
-                images_ph = graph.get_tensor_by_name('images_ph:0')
-                labels_ph = graph.get_tensor_by_name('labels_ph:0')
-                batch_size_ph = graph.get_tensor_by_name('batch_size_ph:0')
-
-                # Get restored model output
-                #restored_logits = graph.get_tensor_by_name('predicted_index:0')
-
-                init_iterator_operation = graph.get_operation_by_name('dataset_init')
-                image_file_paths = [image_file_name]
-                labels = numpy.array([0])
-                # initialize data
-                sess.run(init_iterator_operation, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph:1})
-
-                # Compute inference for dataset
-                predicted_probabilities_top_k = graph.get_operation_by_name('predicted_probabilities_top_k')
-                predicted_index_top_k = graph.get_operation_by_name('predicted_index_top_k')
-                keep_nodes_probabilities = graph.get_tensor_by_name('keep_nodes_probabilities:0')
-                is_training = graph.get_tensor_by_name('is_training:0')
-
-                #restored_logits = sess.run(restored_logits, feed_dict={graph['keep_nodes_probabilities']: 1.0, graph['is_training']: False})
-
-                predicted_probabilities, predicted_indexes = sess.run(
-                 #    [restored_logits, graph['predicted_probabilities_top_k'], graph['predicted_index_top_k']],
-                    [predicted_probabilities_top_k, predicted_index_top_k],
-                    feed_dict={keep_nodes_probabilities: 1.0, is_training: False})
-
-                cols, rows = predicted_indexes.shape
-                list_length = rows if (rows < 6) else 6
-                predicted_indexes2 = predicted_indexes[0, :list_length]
-                # print(" ".join(map(str, predicted_indexes2)))
-                predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
-                predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probabilities[0, :list_length]]
-                return predicted_chars, predicted_indexes2, predicted_probabilities2
-
-    @staticmethod
     def recognize_image(image_file_name):
 
-        batch_size_ph = tf.placeholder(tf.int64, name='batch_size_ph')
-        images_ph = tf.placeholder(dtype=tf.string,  name='images_ph')
-        labels_ph = tf.placeholder(dtype=tf.int32, name='labels_ph')
-        data = Data(images_ph=images_ph, labels_ph=labels_ph, batch_size_ph=batch_size_ph)
+        cnn = Cnn()
         image_file_paths = [image_file_name]
-        init_iterator_operation = data.get_batch(aug=True)
-        data_sample = data.get_next_element()
+        init_iterator_operation = cnn.data.get_batch(aug=True)
+        data_sample = cnn.data.get_next_element()
         image_tensor = data_sample[0]
         labels = numpy.array([0])
-        cnn = Cnn(image_tensor)
-        cnn.sess.run(init_iterator_operation, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph: 1})
+        cnn.build_graph_for_recognition(top_k=3, image_tensor=image_tensor)
+        cnn.init()
+        data = cnn.data
+        cnn.sess.run(init_iterator_operation, feed_dict={data.images_ph: image_file_paths, data.labels_ph: labels, data.batch_size_ph: 1})
         return cnn.recognize()
 
     @staticmethod
     def start_app():
+        print('Python version:', sys.version )
+        print('Tensorflow version:', tf.VERSION)
         tf.app.run()
 
     def define_string(key, value, comment):
         tf.app.flags.DEFINE_string(key, value, comment)
+
+# @staticmethod
+# def recognize_image_with_model(image_file_name):
+#
+#     cnn = Cnn()
+#     print('Loading model...')
+#     graph = tf.Graph()
+#     with graph.as_default():
+#         with tf.Session(graph=graph) as sess:
+#             savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
+#             tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
+#             print(graph.get_operations())
+#             images_ph = graph.get_tensor_by_name('images_ph:0')
+#             labels_ph = graph.get_tensor_by_name('labels_ph:0')
+#             batch_size_ph = graph.get_tensor_by_name('batch_size_ph:0')
+#
+#             # initialize data
+#             init_iterator_operation = graph.get_operation_by_name('init_iterator_op')
+#             image_file_paths = [image_file_name]
+#             labels = numpy.array([0])
+#             sess.run(init_iterator_operation, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph:1})
+#
+#             # Compute inference for dataset
+#             #top_k = graph.get_operation_by_name('top_k/k')
+#             predicted_probability_op = graph.get_operation_by_name('predicted_probability_op')
+#             predicted_index_op = graph.get_operation_by_name('predicted_index_op')
+#
+#             keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
+#             is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
+#
+#             predicted_probability, predicted_index = sess.run(
+#             #list= sess.run(
+#              #    [restored_logits, graph['predicted_probabilities_top_k'], graph['predicted_index_top_k']],
+#                 [predicted_probability_op, predicted_index_op],
+#                 #top_k,
+#                 feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False})
+#             #predicted_probabilities = list[0]
+#             #predicted_indexes = list[1]
+#             cols, rows = predicted_index.shape
+#             list_length = rows if (rows < 6) else 6
+#             predicted_indexes2 = predicted_index[0, :list_length]
+#             # print(" ".join(map(str, predicted_indexes2)))
+#             predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
+#             predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probability[0, :list_length]]
+#             return predicted_chars, predicted_indexes2, predicted_probabilities2
 
