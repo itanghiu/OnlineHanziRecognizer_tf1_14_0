@@ -82,8 +82,7 @@ class Cnn:
                                               log_device_placement=True)) as sess:
 
             sess.run(training_init_op, feed_dict={data.images_ph: images, data.labels_ph: labels, data.batch_size_ph: FLAGS.batch_size})
-            cnn.build_graph_for_training(top_k=1, images=input_tensor, labels=labels_tensor)# returned value graph is a dictionary
-            #cnn.init()
+            cnn.build_graph(images=input_tensor, labels=labels_tensor)# returned value graph is a dictionary
             sess.run(tf.global_variables_initializer())
 
             coordinator = tf.train.Coordinator()
@@ -105,12 +104,13 @@ class Cnn:
             graph = sess.graph
             keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
             is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
+            top_k_ph = graph.get_tensor_by_name('top_k_ph:0')
             #print("nodes:", [n.name for n in graph.as_graph_def().node])
 
             def train():
                 start_time = datetime.now()
                 # print("Getting training data took %s " % utils.r(start_time))
-                feed_dict = {keep_nodes_probabilities_ph: 0.8, is_training_ph: True}
+                feed_dict = {keep_nodes_probabilities_ph: 0.8, is_training_ph: True, top_k_ph:3}
                 _, loss, train_summary, step = sess.run([cnn.train_op, cnn.loss, cnn.merged_summary_op, cnn.step], feed_dict=feed_dict)
 
                 train_writer.add_summary(train_summary, step)
@@ -191,16 +191,7 @@ class Cnn:
                                           activation_fn=None, scope='fc2')
             tf.identity(self.logits, name='output')
 
-
-    def build_graph_for_recognition(self, top_k, image_tensor):
-
-        self.build_main_graph(image_tensor)
-        probabilities = tf.nn.softmax(self.logits)
-        merged_summary_op = tf.summary.merge_all()
-        #self.predicted_probability_op, self.predicted_index_op = tf.nn.top_k(probabilities, k=top_k)
-        tf.nn.top_k(probabilities, k=top_k, name='probability_and_index')
-
-    def build_graph_for_training(self, top_k, images, labels):
+    def build_graph(self, images, labels):
 
         self.build_main_graph(images)
         with tf.variable_scope("loss"):
@@ -208,7 +199,6 @@ class Cnn:
 
         with tf.variable_scope("accuracy"):
             math_ops = tf.cast(tf.argmax(self.logits, 1), tf.int32)
-            #math_ops = tf.cast(tf.argmax(logits, 1), tf.int64)
             tensor_flag = tf.equal(math_ops, labels)
             # compare result to actual label to get accuracy
             self.accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32))
@@ -230,7 +220,9 @@ class Cnn:
         tf.summary.scalar('accuracy', self.accuracy)
         self.merged_summary_op = tf.summary.merge_all()
 
-        predicted_probability_op, predicted_index_op = tf.nn.top_k(probabilities, k=top_k, name='probability_and_index')
+        top_k_ph = tf.placeholder(dtype=tf.int32, shape=[], name='top_k_ph')
+        #predicted_probability_op, predicted_index_op = tf.nn.top_k(probabilities, k=top_k, name='probability_and_index')
+        predicted_probability_op, predicted_index_op = tf.nn.top_k(probabilities, k=top_k_ph, name='probability_and_index')
         # To retrieve predicted_probability_op, predicted_index_op using get_tensor_from_name() :
         # predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
         # predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
@@ -245,7 +237,6 @@ class Cnn:
             with tf.Session(graph=graph) as sess:
                 savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
                 tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
-                print(graph.get_operations())
                 images_ph = graph.get_tensor_by_name('images_ph:0')
                 labels_ph = graph.get_tensor_by_name('labels_ph:0')
                 batch_size_ph = graph.get_tensor_by_name('batch_size_ph:0')
@@ -261,10 +252,11 @@ class Cnn:
                 predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
                 keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
                 is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
+                top_k_ph = graph.get_tensor_by_name('top_k_ph:0')
 
                 predicted_probability, predicted_index = sess.run(
                     [predicted_probability_op, predicted_index_op],
-                    feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False})
+                    feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False, top_k_ph:3})
                 cols, rows = predicted_index.shape
                 list_length = rows if (rows < 6) else 6
                 predicted_indexes2 = predicted_index[0, :list_length]
@@ -281,13 +273,13 @@ class Cnn:
         graph = self.sess.graph
         keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
         is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
-        # in order to know the names ('TopKV2:0' and 'TopKV2:1') of the 2 tensors below, I had to put a stop point and visualize the self.predicted_index_op and self.predicted_probability_op
+        top_k_ph = graph.get_tensor_by_name('top_k_ph:0')
         predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
         predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
 
         predicted_probabilities, predicted_indexes = self.sess.run(
             [predicted_probability_op, predicted_index_op],
-            feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False})
+            feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False, top_k_ph: 3})
 
         cols, rows = predicted_indexes.shape
         list_length = rows if (rows < 6) else 6
@@ -306,7 +298,7 @@ class Cnn:
         data_sample = cnn.data.get_next_element()
         image_tensor = data_sample[0]
         labels = numpy.array([0])
-        cnn.build_graph_for_recognition(top_k=3, image_tensor=image_tensor)
+        cnn.build_graph(images=image_tensor, labels=labels)
         cnn.init()
         data = cnn.data
         cnn.sess.run(init_iterator_operation, feed_dict={data.images_ph: image_file_paths, data.labels_ph: labels, data.batch_size_ph: 1})

@@ -15,17 +15,15 @@ from cnn import Cnn
 logger = logging.getLogger('app.py')
 logging.basicConfig(filename='webApp.log', level=logging.DEBUG)
 app = Flask(__name__)
-batch_size_ph = tf.placeholder(tf.int64, name='batch_size_ph')
-images_ph = tf.placeholder(dtype=tf.string, name='images_ph')
-labels_ph = tf.placeholder(dtype=tf.int32, name='labels_ph')
-data = Data(images_ph=images_ph, labels_ph=labels_ph, batch_size_ph=batch_size_ph)
+data = Data()
 data.image_file_paths = [utils.HAND_WRITTEN_CHAR_FILE_NAME]
 init_iterator_operation = data.get_batch(aug=True)
 data_sample = data.get_next_element()
 image_tensor = data_sample[0]
 labels_tensor = data_sample[1]
 cnn = Cnn()
-cnn.build_graph_for_recognition(top_k=3, image_tensor=image_tensor)
+labels = numpy.array([0])
+cnn.build_graph(images=image_tensor, labels=labels)
 cnn.init()
 
 @app.route('/')
@@ -46,7 +44,7 @@ def add_char_image():
         hand_written_char_file_name = utils.HAND_WRITTEN_CHAR_FILE_NAME
         image.save(hand_written_char_file_name, 'PNG')
         labels = numpy.array([0])
-        cnn.sess.run(init_iterator_operation, feed_dict={images_ph: [hand_written_char_file_name], labels_ph: labels, batch_size_ph: 1})
+        cnn.sess.run(init_iterator_operation, feed_dict={data.images_ph: [hand_written_char_file_name], data.labels_ph: labels, data.batch_size_ph: 1})
         predicted_chars, predicted_indexes, predicted_probabilities = cnn.recognize()
         logger.info('Predicted chars: ' + ":".join(predicted_chars))
         logger.info('Predicted probabilities: ' + ", ".join(predicted_probabilities))
