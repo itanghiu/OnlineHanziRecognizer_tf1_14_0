@@ -105,13 +105,15 @@ class Cnn:
             keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
             is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
             top_k_ph = graph.get_tensor_by_name('top_k_ph:0')
-            #print("nodes:", [n.name for n in graph.as_graph_def().node])
+            step_tsr = graph.get_tensor_by_name('step:0')
+            train_op = graph.get_tensor_by_name('train_op/control_dependency:0')
+            merged_summary_op = graph.get_tensor_by_name('Merge/MergeSummary:0')
 
             def train():
                 start_time = datetime.now()
                 # print("Getting training data took %s " % utils.r(start_time))
-                feed_dict = {keep_nodes_probabilities_ph: 0.8, is_training_ph: True, top_k_ph:3}
-                _, loss, train_summary, step = sess.run([cnn.train_op, cnn.loss, cnn.merged_summary_op, cnn.step], feed_dict=feed_dict)
+                feed_dict = {keep_nodes_probabilities_ph: 0.8, is_training_ph: True, top_k_ph: 3}
+                _, loss, train_summary, step = sess.run([train_op, cnn.loss, merged_summary_op, step_tsr], feed_dict=feed_dict)
 
                 train_writer.add_summary(train_summary, step)
                 logger.info("Step #%s took %s. Loss: %.3f \n" % (step, utils.r(start_time), loss))
@@ -127,22 +129,23 @@ class Cnn:
                     break
 
                 if (step % eval_frequency == 0) and (step >= eval_frequency):
+                    accuracy = graph.get_tensor_by_name('accuracy/accuracy:0')
                     feed_dict = {keep_nodes_probabilities_ph: 1.0, is_training_ph: False}
-                    accuracy_test, test_summary = sess.run([cnn.accuracy, cnn.merged_summary_op], feed_dict=feed_dict)
+                    accuracy_test, test_summary = sess.run([accuracy, merged_summary_op], feed_dict=feed_dict)
+
                     test_writer.add_summary(test_summary, step)
                     logger.info('---------- Step #%d   Test accuracy: %.2f ' % (int(step), accuracy_test))
 
                 if ((step % FLAGS.saving_step_frequency == 0) and (step != 0)):
                     logger.info('Saving checkpoint of step %s' % step)
                     saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'),
-                               #global_step=graph_map['step'])
-                               global_step = cnn.step)
+                               global_step=step_tsr)
 
             logger.info('Training Completed in  %s ' % utils.r(start_time))
             coordinator.request_stop()
             train_writer.close()
             test_writer.close()
-            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=cnn.step)
+            saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=step_tsr)
             coordinator.join(threads)
 
             # --- Saving model
@@ -154,7 +157,6 @@ class Cnn:
                     shutil.rmtree(savedmodel_dir)
                 except OSError as e:
                     print("Error: %s : %s" % (savedmodel_dir, e.strerror))
-            #output = cnn.predicted_index_op
             output = graph.get_tensor_by_name('probability_and_index:1')
             tf.identity(output, name='output')
             tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"images_ph": data.images_ph, "labels_ph": data.labels_ph, "batch_size_ph": data.batch_size_ph},
@@ -201,27 +203,26 @@ class Cnn:
             math_ops = tf.cast(tf.argmax(self.logits, 1), tf.int32)
             tensor_flag = tf.equal(math_ops, labels)
             # compare result to actual label to get accuracy
-            self.accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32))
+            accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32), name='accuracy')
 
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         if update_ops:
             updates = tf.group(*update_ops)
             self.loss = control_flow_ops.with_dependencies([updates], self.loss)
 
-        self.step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
-        learning_rate = tf.train.exponential_decay(learning_rate=LEARNING_RATE, global_step=self.step, decay_rate=0.97,
+        step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
+        learning_rate = tf.train.exponential_decay(learning_rate=LEARNING_RATE, global_step=step, decay_rate=0.97,
                                                    decay_steps=2000, staircase=True)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         # the step will be incremented after the call to optimizer.minimize()
-        self.train_op = slim.learning.create_train_op(self.loss, optimizer, global_step=self.step)
+        train_op = slim.learning.create_train_op(self.loss, optimizer, global_step=step)
 
         probabilities = tf.nn.softmax(self.logits)
 
-        tf.summary.scalar('accuracy', self.accuracy)
-        self.merged_summary_op = tf.summary.merge_all()
+        tf.summary.scalar('accuracy', accuracy)
+        merged_summary_op = tf.summary.merge_all()
 
         top_k_ph = tf.placeholder(dtype=tf.int32, shape=[], name='top_k_ph')
-        #predicted_probability_op, predicted_index_op = tf.nn.top_k(probabilities, k=top_k, name='probability_and_index')
         predicted_probability_op, predicted_index_op = tf.nn.top_k(probabilities, k=top_k_ph, name='probability_and_index')
         # To retrieve predicted_probability_op, predicted_index_op using get_tensor_from_name() :
         # predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
@@ -242,10 +243,10 @@ class Cnn:
                 batch_size_ph = graph.get_tensor_by_name('batch_size_ph:0')
 
                 # initialize data
-                init_iterator_operation = graph.get_operation_by_name('init_iterator_op')
+                init_iterator_op = graph.get_operation_by_name('init_iterator_op')
                 image_file_paths = [image_file_name]
                 labels = numpy.array([0])
-                sess.run(init_iterator_operation, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph:1})
+                sess.run(init_iterator_op, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph:1})
 
                 # Compute inference for dataset
                 predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
