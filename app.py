@@ -21,9 +21,8 @@ init_iterator_operation = data.get_batch(aug=True)
 data_sample = data.get_next_element()
 image_tensor = data_sample[0]
 labels_tensor = data_sample[1]
-cnn = Cnn()
 labels = numpy.array([0])
-cnn.build_graph(images=image_tensor, labels=labels)
+cnn = Cnn(image_tensor=image_tensor, labels=labels)
 cnn.init()
 
 @app.route('/')

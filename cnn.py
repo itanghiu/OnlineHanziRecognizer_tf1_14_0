@@ -52,9 +52,9 @@ class Cnn:
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
     FLAGS = tf.app.flags.FLAGS
 
-    def __init__(self):
+    def __init__(self, image_tensor, labels):
         print('Instantiating...')
-        self.data = Data()
+        self.build_graph(images=image_tensor, labels=labels)
 
     def init(self):
         print('Initializing graph...')
@@ -68,21 +68,20 @@ class Cnn:
     def training():
 
         FLAGS = Cnn.FLAGS
-        cnn = Cnn()
-        data = cnn.data
+        data = Data()
         test_data = Data()
         images, labels = Data.prepare_data_for_training(Data.DATA_TRAINING)
-        training_init_op = cnn.data.get_batch(aug=True)
-        next_training_sample = cnn.data.get_next_element()
-        input_tensor = next_training_sample[0]
+        training_init_op = data.get_batch(aug=True)
+        next_training_sample = data.get_next_element()
+        images_tensor = next_training_sample[0]
         labels_tensor = next_training_sample[1]
+        cnn = Cnn(image_tensor=images_tensor, labels=labels_tensor)
 
         # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
         with tf.Session(config=tf.ConfigProto(gpu_options=Cnn.gpu_options, allow_soft_placement=True,
                                               log_device_placement=True)) as sess:
 
             sess.run(training_init_op, feed_dict={data.images_ph: images, data.labels_ph: labels, data.batch_size_ph: FLAGS.batch_size})
-            cnn.build_graph(images=input_tensor, labels=labels_tensor)# returned value graph is a dictionary
             sess.run(tf.global_variables_initializer())
 
             coordinator = tf.train.Coordinator()
@@ -107,13 +106,14 @@ class Cnn:
             top_k_ph = graph.get_tensor_by_name('top_k_ph:0')
             step_tsr = graph.get_tensor_by_name('step:0')
             train_op = graph.get_tensor_by_name('train_op/control_dependency:0')
+            loss_tsr = graph.get_tensor_by_name('loss/Mean:0')
             merged_summary_op = graph.get_tensor_by_name('Merge/MergeSummary:0')
 
             def train():
                 start_time = datetime.now()
                 # print("Getting training data took %s " % utils.r(start_time))
                 feed_dict = {keep_nodes_probabilities_ph: 0.8, is_training_ph: True, top_k_ph: 3}
-                _, loss, train_summary, step = sess.run([train_op, cnn.loss, merged_summary_op, step_tsr], feed_dict=feed_dict)
+                _, loss, train_summary, step = sess.run([train_op, loss_tsr, merged_summary_op, step_tsr], feed_dict=feed_dict)
 
                 train_writer.add_summary(train_summary, step)
                 logger.info("Step #%s took %s. Loss: %.3f \n" % (step, utils.r(start_time), loss))
@@ -192,10 +192,10 @@ class Cnn:
                                        scope='fc1')
             logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities_ph), Data.CHARSET_SIZE,
                                                activation_fn=None, scope='fc2')
-            tf.identity(logits, name='output')
+            tf.identity(logits, name='output')# for the model
 
         with tf.variable_scope("loss"):
-            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+            loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
 
         with tf.variable_scope("accuracy"):
             math_ops = tf.cast(tf.argmax(logits, 1), tf.int32)
@@ -203,17 +203,17 @@ class Cnn:
             # compare result to actual label to get accuracy
             accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32), name='accuracy')
 
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        if update_ops:
-            updates = tf.group(*update_ops)
-            self.loss = control_flow_ops.with_dependencies([updates], self.loss)
+        # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        # if update_ops:
+        #     updates = tf.group(*update_ops)
+        #     self.loss = control_flow_ops.with_dependencies([updates], self.loss)
 
         step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
         learning_rate = tf.train.exponential_decay(learning_rate=LEARNING_RATE, global_step=step, decay_rate=0.97,
                                                    decay_steps=2000, staircase=True)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         # the step will be incremented after the call to optimizer.minimize()
-        train_op = slim.learning.create_train_op(self.loss, optimizer, global_step=step)
+        train_op = slim.learning.create_train_op(loss, optimizer, global_step=step)
 
         probabilities = tf.nn.softmax(logits)
 
@@ -229,7 +229,6 @@ class Cnn:
     # @staticmethod
     def recognize_image_with_model(image_file_name):
 
-        cnn = Cnn()
         print('Loading model...')
         graph = tf.Graph()
         with graph.as_default():
@@ -291,15 +290,14 @@ class Cnn:
     @staticmethod
     def recognize_image(image_file_name):
 
-        cnn = Cnn()
+        data = Data()
         image_file_paths = [image_file_name]
-        init_iterator_operation = cnn.data.get_batch(aug=True)
-        data_sample = cnn.data.get_next_element()
+        init_iterator_operation = data.get_batch(aug=True)
+        data_sample = data.get_next_element()
         image_tensor = data_sample[0]
         labels = numpy.array([0])
-        cnn.build_graph(images=image_tensor, labels=labels)
+        cnn = Cnn(image_tensor=image_tensor, labels=labels)
         cnn.init()
-        data = cnn.data
         cnn.sess.run(init_iterator_operation, feed_dict={data.images_ph: image_file_paths, data.labels_ph: labels, data.batch_size_ph: 1})
         return cnn.recognize()
 
