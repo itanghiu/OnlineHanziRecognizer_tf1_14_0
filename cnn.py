@@ -164,14 +164,14 @@ class Cnn:
             logger.info('End saving model.')
             sess.close()
 
-    def build_main_graph(self, image_tensor):
+    def build_graph(self, images, labels):
 
         keep_nodes_probabilities_ph = tf.placeholder(dtype=tf.float32, shape=[], name='keep_nodes_probabilities_ph')
         is_training_ph = tf.placeholder(dtype=tf.bool, shape=[], name='is_training_ph')
 
         with tf.variable_scope("convolutional_layer"):
             # stride = 1
-            conv3_1 = slim.conv2d(image_tensor, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
+            conv3_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
             max_pool_1 = slim.max_pool2d(conv3_1, [2, 2], [2, 2], padding='SAME', scope='pool1')
 
             conv3_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
@@ -187,20 +187,18 @@ class Cnn:
         flatten = slim.flatten(max_pool_4)
 
         with tf.variable_scope("fc_layer"):  # fully connected layer
-            fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities_ph), 1024, activation_fn=tf.nn.relu,
+            fc1 = slim.fully_connected(slim.dropout(flatten, keep_nodes_probabilities_ph), 1024,
+                                       activation_fn=tf.nn.relu,
                                        scope='fc1')
-            self.logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities_ph), Data.CHARSET_SIZE,
-                                          activation_fn=None, scope='fc2')
-            tf.identity(self.logits, name='output')
+            logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities_ph), Data.CHARSET_SIZE,
+                                               activation_fn=None, scope='fc2')
+            tf.identity(logits, name='output')
 
-    def build_graph(self, images, labels):
-
-        self.build_main_graph(images)
         with tf.variable_scope("loss"):
-            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=labels))
+            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
 
         with tf.variable_scope("accuracy"):
-            math_ops = tf.cast(tf.argmax(self.logits, 1), tf.int32)
+            math_ops = tf.cast(tf.argmax(logits, 1), tf.int32)
             tensor_flag = tf.equal(math_ops, labels)
             # compare result to actual label to get accuracy
             accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32), name='accuracy')
@@ -217,7 +215,7 @@ class Cnn:
         # the step will be incremented after the call to optimizer.minimize()
         train_op = slim.learning.create_train_op(self.loss, optimizer, global_step=step)
 
-        probabilities = tf.nn.softmax(self.logits)
+        probabilities = tf.nn.softmax(logits)
 
         tf.summary.scalar('accuracy', accuracy)
         merged_summary_op = tf.summary.merge_all()
@@ -313,49 +311,4 @@ class Cnn:
 
     def define_string(key, value, comment):
         tf.app.flags.DEFINE_string(key, value, comment)
-
-# @staticmethod
-# def recognize_image_with_model(image_file_name):
-#
-#     cnn = Cnn()
-#     print('Loading model...')
-#     graph = tf.Graph()
-#     with graph.as_default():
-#         with tf.Session(graph=graph) as sess:
-#             savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
-#             tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
-#             print(graph.get_operations())
-#             images_ph = graph.get_tensor_by_name('images_ph:0')
-#             labels_ph = graph.get_tensor_by_name('labels_ph:0')
-#             batch_size_ph = graph.get_tensor_by_name('batch_size_ph:0')
-#
-#             # initialize data
-#             init_iterator_operation = graph.get_operation_by_name('init_iterator_op')
-#             image_file_paths = [image_file_name]
-#             labels = numpy.array([0])
-#             sess.run(init_iterator_operation, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph:1})
-#
-#             # Compute inference for dataset
-#             #top_k = graph.get_operation_by_name('top_k/k')
-#             predicted_probability_op = graph.get_operation_by_name('predicted_probability_op')
-#             predicted_index_op = graph.get_operation_by_name('predicted_index_op')
-#
-#             keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
-#             is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
-#
-#             predicted_probability, predicted_index = sess.run(
-#             #list= sess.run(
-#              #    [restored_logits, graph['predicted_probabilities_top_k'], graph['predicted_index_top_k']],
-#                 [predicted_probability_op, predicted_index_op],
-#                 #top_k,
-#                 feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False})
-#             #predicted_probabilities = list[0]
-#             #predicted_indexes = list[1]
-#             cols, rows = predicted_index.shape
-#             list_length = rows if (rows < 6) else 6
-#             predicted_indexes2 = predicted_index[0, :list_length]
-#             # print(" ".join(map(str, predicted_indexes2)))
-#             predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
-#             predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probability[0, :list_length]]
-#             return predicted_chars, predicted_indexes2, predicted_probabilities2
 
