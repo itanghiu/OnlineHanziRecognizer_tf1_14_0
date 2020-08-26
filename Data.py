@@ -3,29 +3,37 @@ import os
 import tensorflow as tf
 import utils
 import codecs
+import ImageDatasetGeneration
 from datetime import datetime
 
 class Data:
 
-    CHECKPOINT = 'C:\\Users\\I-Tang\\DATA\\DEV\\TENSORFLOW\\OnlineHanziRecognizer_tf\\new_checkpoint'
+    #ROOT='C:\Users\I-Tang\DATA\DEV\TENSORFLOW\OnlineHanziRecognizer_tf'
+    ROOT ='E:\DEV\TENSORFLOW\OnlineHanziRecognizer_tf'
+    CHECKPOINT = ROOT + '\checkpoint'
     DATA_ROOT_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'
     DATA_TRAINING = DATA_ROOT_DIR + '/training_light'
     DATA_TEST = DATA_ROOT_DIR + '/test_light'
     CHARSET_SIZE = 3755
     IMAGE_SIZE = 64
 
-    #def __init__(self, images_ph=None, labels_ph=None, batch_size_ph=1, random_flip_up_down=False, random_brightness=False, random_contrast=True):
     def __init__(self, random_flip_up_down=False, random_brightness=False, random_contrast=True):
 
-        # self.images_ph = images_ph
-        # self.labels_ph = labels_ph
-        # self.batch_size_ph = batch_size_ph
         self.batch_size_ph = tf.placeholder(tf.int64, name='batch_size_ph')
         self.images_ph = tf.placeholder(dtype=tf.string, name='images_ph')
         self.labels_ph = tf.placeholder(dtype=tf.int32, name='labels_ph')
         self.random_flip_up_down = random_flip_up_down
         self.random_brightness = random_brightness
         self.random_contrast = random_contrast
+
+    @staticmethod
+    def get_label_char_dico(file):
+
+        path = os.getcwd() + os.sep + file
+        char_label_dictionary = Data.load_char_label_dico(path)
+        label_char_dico = Data.get_label_char_map(char_label_dictionary)
+        return label_char_dico
+
 
     @staticmethod
     def augmentation(self, images):
@@ -37,14 +45,6 @@ class Data:
         elif self.random_contrast:
             images = tf.image.random_contrast(images, 0.9, 1.1)  #  0.8 1.2
         return images
-
-    @staticmethod
-    def get_label_char_dico(file):
-
-        path = os.getcwd() + os.sep + file
-        char_label_dictionary = Data.load_char_label_dico(path)
-        label_char_dico = Data.get_label_char_map(char_label_dictionary)
-        return label_char_dico
 
     def get_label_char_map(character_label_dico):
         inverted_map = {v: k for k, v in character_label_dico.items()}

@@ -55,14 +55,11 @@ class Cnn:
     def __init__(self, image_tensor, labels):
         print('Instantiating...')
         self.build_graph(images=image_tensor, labels=labels)
-
-    def init(self):
-        print('Initializing graph...')
+        # Initializing graph...
         self.saver = tf.train.Saver()
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
         self.sess.run(init)
-        print('End of graph initialization.')
 
     @staticmethod
     def training():
@@ -75,7 +72,7 @@ class Cnn:
         next_training_sample = data.get_next_element()
         images_tensor = next_training_sample[0]
         labels_tensor = next_training_sample[1]
-        cnn = Cnn(image_tensor=images_tensor, labels=labels_tensor)
+        Cnn.build_graph(images=images_tensor, labels=labels_tensor)
 
         # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
         with tf.Session(config=tf.ConfigProto(gpu_options=Cnn.gpu_options, allow_soft_placement=True,
@@ -164,7 +161,8 @@ class Cnn:
             logger.info('End saving model.')
             sess.close()
 
-    def build_graph(self, images, labels):
+    @staticmethod
+    def build_graph(images, labels):
 
         keep_nodes_probabilities_ph = tf.placeholder(dtype=tf.float32, shape=[], name='keep_nodes_probabilities_ph')
         is_training_ph = tf.placeholder(dtype=tf.bool, shape=[], name='is_training_ph')
@@ -203,10 +201,10 @@ class Cnn:
             # compare result to actual label to get accuracy
             accuracy = tf.reduce_mean(tf.cast(tensor_flag, tf.float32), name='accuracy')
 
-        # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        # if update_ops:
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        #if update_ops:
         #     updates = tf.group(*update_ops)
-        #     self.loss = control_flow_ops.with_dependencies([updates], self.loss)
+        #     loss = control_flow_ops.with_dependencies([updates], loss)
 
         step = tf.get_variable("step", [], initializer=tf.constant_initializer(0.0), trainable=False)
         learning_rate = tf.train.exponential_decay(learning_rate=LEARNING_RATE, global_step=step, decay_rate=0.97,
@@ -297,7 +295,6 @@ class Cnn:
         image_tensor = data_sample[0]
         labels = numpy.array([0])
         cnn = Cnn(image_tensor=image_tensor, labels=labels)
-        cnn.init()
         cnn.sess.run(init_iterator_operation, feed_dict={data.images_ph: image_file_paths, data.labels_ph: labels, data.batch_size_ph: 1})
         return cnn.recognize()
 
@@ -307,6 +304,6 @@ class Cnn:
         print('Tensorflow version:', tf.VERSION)
         tf.app.run()
 
-    def define_string(key, value, comment):
-        tf.app.flags.DEFINE_string(key, value, comment)
+    #def define_string(key, value, comment):
+    #    tf.app.flags.DEFINE_string(key, value, comment)
 

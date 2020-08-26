@@ -1,10 +1,6 @@
 import os
 import numpy as np
 import cv2
-import argparse
-import random
-import sys
-import pickle
 import struct
 import codecs
 from datetime import datetime
@@ -12,9 +8,10 @@ import utils
 from Data import Data
 
 CHAR_LABEL_DICO_FILE_NAME = 'charLabelDicoFile.txt'
-GNT_TRAINING_PATH = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\OFFLINE\HWDB1.1trn_gnt'
-GNT_TEST_PATH = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\OFFLINE\HWDB1.1tst_gnt'
-OUTPUT_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'
+CASIA_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA'
+GNT_TRAINING_PATH = CASIA_DIR + '\OFFLINE\HWDB1.1trn_gnt'
+GNT_TEST_PATH = CASIA_DIR + '\OFFLINE\HWDB1.1tst_gnt'
+OUTPUT_DIR = CASIA_DIR + '\TEMP_GENERATED_DATASET'
 
 
 # returns a map . key = chinese character, value = index

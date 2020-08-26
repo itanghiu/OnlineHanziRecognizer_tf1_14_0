@@ -23,7 +23,6 @@ image_tensor = data_sample[0]
 labels_tensor = data_sample[1]
 labels = numpy.array([0])
 cnn = Cnn(image_tensor=image_tensor, labels=labels)
-cnn.init()
 
 @app.route('/')
 def index():

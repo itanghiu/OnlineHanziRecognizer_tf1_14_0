@@ -14,7 +14,7 @@
 
 ### General principle of the chinese character recognition process
 
-Th way the system recognizes the handwritten characters fllows the steps below:
+Th way the system recognizes the handwritten characters follows the steps below:
   - the user draws the first stroke of the character. 
   - as soon as he lifts up the mouse pointer,the uncompleted image of the character is sent to the server,
   - the image is fed to the neural network who tries to recognize the character. It fails because most of the time, this uncompleted character does not correspond to an existing character.
@@ -47,11 +47,19 @@ In this project, the original training dataset is split into two parts:
 the name of the directories (label) is an integer between 0 and 3755. The dictionary ImageDatasetGeneration.char_label_dictionary stores the correspondance between the character and the label.
 
 The script ImageDatasetGeneration.py generates the dataset. To start it :
- > python PATH_TO_PROJECT\OnlineHanziRecognizer\ImageDatasetGeneration.py
+ > python PATH_TO_PROJECT\OnlineHanziRecognizer_tf1_14_0\ImageDatasetGeneration.py
  
  When the script completes, 895 000 files in 3755 folders will be generated.
 
 ### Code organization 
+
+
+#### start.py :
+The entry point for the :
+  - training,
+  - web app
+  - recognize_image
+  - recognize_image_with_model
 
 #### app.py : 
 this module starts the web server and contains the REST API called by the browser to communicate with the server.
