@@ -6,7 +6,7 @@
  While the user handwrites a chinese character using the mouse, the computer recognizes the handwritten character and display the results. 
  Every time the user adds a stroke, the computer restarts the recognition process and updates the results.
  The results are a list of most probable candidate character.
- The engine is based on a deep neural network using tensorflow
+ The engine is based on a deep neural network using tensorflow 1.14.0 and Python 3.6.3
  
 #### Screenshots Web UI
 ![](https://github.com/itanghiu/onlineHanziRecognizer/blob/master/doc/OnlineHanziRecogWebUI.PNG)

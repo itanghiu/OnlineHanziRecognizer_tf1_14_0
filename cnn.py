@@ -304,6 +304,13 @@ class Cnn:
         print('Tensorflow version:', tf.VERSION)
         tf.app.run()
 
-    #def define_string(key, value, comment):
-    #    tf.app.flags.DEFINE_string(key, value, comment)
+    @staticmethod
+    def convert_to_tensor_lite():
+        logger.info('Converting model...')
+        saved_model_dir = os.getcwd() + os.sep + 'savedModel'
+        logger.info('Converting model located at '+ saved_model_dir)
+        converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+        tflite_model = converter.convert()
+        open("converted_model.tflite", "wb").write(tflite_model)
+
 

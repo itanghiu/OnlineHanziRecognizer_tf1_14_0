@@ -24,6 +24,8 @@ def main(_):
     elif FLAGS.mode == "training":
         Cnn.training()
 
+    elif FLAGS.mode == "convert_to_tensor_lite":
+        Cnn.convert_to_tensor_lite()
 
 if __name__ == "__main__":  # Learning mode
     Cnn.start_app()
