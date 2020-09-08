@@ -9,7 +9,7 @@ from datetime import datetime
 class Data:
 
     #ROOT='C:\Users\I-Tang\DATA\DEV\TENSORFLOW\OnlineHanziRecognizer_tf'
-    ROOT ='E:\DEV\TENSORFLOW\OnlineHanziRecognizer_tf'
+    ROOT ='E:\DEV\TENSORFLOW\OnlineHanziRecognizer_tf1_14_0'
     CHECKPOINT = ROOT + '\checkpoint'
     DATA_ROOT_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'
     DATA_TRAINING = DATA_ROOT_DIR + '/training_light'
@@ -19,9 +19,9 @@ class Data:
 
     def __init__(self, random_flip_up_down=False, random_brightness=False, random_contrast=True):
 
-        self.batch_size_ph = tf.placeholder(tf.int64, name='batch_size_ph')
-        self.images_ph = tf.placeholder(dtype=tf.string, name='images_ph')
-        self.labels_ph = tf.placeholder(dtype=tf.int32, name='labels_ph')
+        self.batch_size_ph = tf.placeholder(tf.int64, shape=(), name='batch_size_ph')
+        self.image_paths_ph = tf.placeholder(dtype=tf.string, shape=(None,), name='image_paths_ph')
+        self.labels_ph = tf.placeholder(dtype=tf.int32,  shape=(None,), name='labels_ph')
         self.random_flip_up_down = random_flip_up_down
         self.random_brightness = random_brightness
         self.random_contrast = random_contrast
@@ -69,7 +69,7 @@ class Data:
             images = tf.image.resize_images(image_grey, standard_size)
             return images
 
-        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.images_ph)
+        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.image_paths_ph)
         label_dataset = tf.data.Dataset.from_tensor_slices(self.labels_ph)
         image_file_path_dataset = image_file_path_dataset.map(_parse_function)
 
@@ -94,7 +94,7 @@ class Data:
             images = tf.image.resize_images(image_grey, standard_size)
             return images
 
-        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.images_ph)
+        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.image_paths_ph)
         label_dataset = tf.data.Dataset.from_tensor_slices(self.labels_ph)
         image_file_path_dataset = image_file_path_dataset.map(_parse_function)
 

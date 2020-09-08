@@ -41,7 +41,7 @@ class Cnn:
     tf.app.flags.DEFINE_integer('batch_size', 100, 'Batch size')  # 20
     tf.app.flags.DEFINE_integer('saving_step_frequency', 250, "Save the network every 'saving_step_frequency' steps")
     tf.app.flags.DEFINE_integer('epoch', 15, 'Number of epoches')
-    tf.app.flags.DEFINE_integer('max_steps', 251, 'the max number of steps for training')  # 300
+    tf.app.flags.DEFINE_integer('max_steps', 5, 'the max number of steps for training')  # 300
     tf.app.flags.DEFINE_boolean('restore', True, 'whether to restore from checkpoint')
 
     tf.app.flags.DEFINE_boolean('random_flip_up_down', False, "Whether to random flip up down")
@@ -78,7 +78,7 @@ class Cnn:
         with tf.Session(config=tf.ConfigProto(gpu_options=Cnn.gpu_options, allow_soft_placement=True,
                                               log_device_placement=True)) as sess:
 
-            sess.run(training_init_op, feed_dict={data.images_ph: images, data.labels_ph: labels, data.batch_size_ph: FLAGS.batch_size})
+            sess.run(training_init_op, feed_dict={data.image_paths_ph: images, data.labels_ph: labels, data.batch_size_ph: FLAGS.batch_size})
             sess.run(tf.global_variables_initializer())
 
             coordinator = tf.train.Coordinator()
@@ -145,21 +145,33 @@ class Cnn:
             saver.save(sess, os.path.join(FLAGS.checkpoint_dir, 'online_hanzi_recog'), global_step=step_tsr)
             coordinator.join(threads)
 
-            # --- Saving model
-            logger.info('Saving model...')
-            savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
-            # delete the model directory
-            if (path.exists('savedModel')):
-                try:
-                    shutil.rmtree(savedmodel_dir)
-                except OSError as e:
-                    print("Error: %s : %s" % (savedmodel_dir, e.strerror))
-            output = graph.get_tensor_by_name('probability_and_index:1')
-            tf.identity(output, name='output')
-            tf.saved_model.simple_save(sess, savedmodel_dir, inputs={"images_ph": data.images_ph, "labels_ph": data.labels_ph, "batch_size_ph": data.batch_size_ph},
-                                       outputs={"output": output})
-            logger.info('End saving model.')
+            Cnn.save_model(graph, data, sess)
             sess.close()
+
+    @staticmethod
+    def save_model(graph, data, sess):
+
+        # --- Saving model
+        logger.info('Saving model...')
+        savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
+        # delete the model directory
+        if (path.exists('savedModel')):
+            try:
+                shutil.rmtree(savedmodel_dir)
+            except OSError as e:
+                print("Error: %s : %s" % (savedmodel_dir, e.strerror))
+        # output = graph.get_operation_by_name('probability_and_index_op')
+        #probability = graph.get_tensor_by_name('probability_and_index_op:0')
+        #index = graph.get_tensor_by_name('probability_and_index_op:1')
+
+        probability_ts = graph.get_tensor_by_name('predicted_probability_ts:0')
+        index_ts = graph.get_tensor_by_name('predicted_index_ts:0')
+
+        tf.saved_model.simple_save(sess, savedmodel_dir,
+                                   #inputs={"image_paths_ph": data.image_paths_ph, "labels_ph": data.labels_ph,"batch_size_ph": data.batch_size_ph},
+                                   inputs={"image_paths_ph": data.image_paths_ph},
+                                   outputs={"probability": probability_ts, "index": index_ts})
+        logger.info('End saving model.')
 
     @staticmethod
     def build_graph(images, labels):
@@ -190,7 +202,6 @@ class Cnn:
                                        scope='fc1')
             logits = slim.fully_connected(slim.dropout(fc1, keep_nodes_probabilities_ph), Data.CHARSET_SIZE,
                                                activation_fn=None, scope='fc2')
-            tf.identity(logits, name='output')# for the model
 
         with tf.variable_scope("loss"):
             loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
@@ -219,12 +230,13 @@ class Cnn:
         merged_summary_op = tf.summary.merge_all()
 
         top_k_ph = tf.placeholder(dtype=tf.int32, shape=[], name='top_k_ph')
-        predicted_probability_op, predicted_index_op = tf.nn.top_k(probabilities, k=top_k_ph, name='probability_and_index')
-        # To retrieve predicted_probability_op, predicted_index_op using get_tensor_from_name() :
-        # predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
-        # predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
+        predicted_probability_ts, predicted_index_ts = tf.nn.top_k(probabilities, k=top_k_ph, name='probability_and_index_op')
+        tf.identity(predicted_probability_ts, name="predicted_probability_ts")
+        tf.identity(predicted_index_ts, name="predicted_index_ts")
+        # To retrieve predicted_probability_ts, predicted_index_ts using get_tensor_from_name() :
+        # predicted_probability_ts = graph.get_tensor_by_name('probability_and_index_op:0')
+        # predicted_index_ts = graph.get_tensor_by_name('probability_and_index_op:1')
 
-    # @staticmethod
     def recognize_image_with_model(image_file_name):
 
         print('Loading model...')
@@ -233,32 +245,35 @@ class Cnn:
             with tf.Session(graph=graph) as sess:
                 savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
                 tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
-                images_ph = graph.get_tensor_by_name('images_ph:0')
                 labels_ph = graph.get_tensor_by_name('labels_ph:0')
+                image_paths_ph = graph.get_tensor_by_name('image_paths_ph:0')
                 batch_size_ph = graph.get_tensor_by_name('batch_size_ph:0')
 
                 # initialize data
                 init_iterator_op = graph.get_operation_by_name('init_iterator_op')
                 image_file_paths = [image_file_name]
                 labels = numpy.array([0])
-                sess.run(init_iterator_op, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph:1})
+                sess.run(init_iterator_op, feed_dict={image_paths_ph: image_file_paths, labels_ph: labels, batch_size_ph: 1})
 
                 # Compute inference for dataset
-                predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
-                predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
+                #predicted_probability_ts = graph.get_tensor_by_name('predicted_probability_op:0')
+                #predicted_index_ts = graph.get_tensor_by_name('predicted_index_op:0')
+                predicted_probability_ts = graph.get_tensor_by_name('predicted_probability_ts:0')
+                predicted_index_ts = graph.get_tensor_by_name('predicted_index_ts:0')
+
                 keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
                 is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
                 top_k_ph = graph.get_tensor_by_name('top_k_ph:0')
 
                 predicted_probability, predicted_index = sess.run(
-                    [predicted_probability_op, predicted_index_op],
-                    feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False, top_k_ph:3})
+                    [predicted_probability_ts, predicted_index_ts],
+                    feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False, top_k_ph: 3})
                 cols, rows = predicted_index.shape
                 list_length = rows if (rows < 6) else 6
                 predicted_indexes2 = predicted_index[0, :list_length]
                 predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
                 predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probability[0, :list_length]]
-                return predicted_chars, predicted_indexes2, predicted_probabilities2
+        return predicted_chars, predicted_indexes2, predicted_probabilities2
 
     def recognize(self):
 
@@ -270,8 +285,8 @@ class Cnn:
         keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
         is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
         top_k_ph = graph.get_tensor_by_name('top_k_ph:0')
-        predicted_probability_op = graph.get_tensor_by_name('probability_and_index:0')
-        predicted_index_op = graph.get_tensor_by_name('probability_and_index:1')
+        predicted_probability_op = graph.get_tensor_by_name('probability_and_index_op:0')
+        predicted_index_op = graph.get_tensor_by_name('probability_and_index_op:1')
 
         predicted_probabilities, predicted_indexes = self.sess.run(
             [predicted_probability_op, predicted_index_op],
@@ -295,7 +310,7 @@ class Cnn:
         image_tensor = data_sample[0]
         labels = numpy.array([0])
         cnn = Cnn(image_tensor=image_tensor, labels=labels)
-        cnn.sess.run(init_iterator_operation, feed_dict={data.images_ph: image_file_paths, data.labels_ph: labels, data.batch_size_ph: 1})
+        cnn.sess.run(init_iterator_operation, feed_dict={data.image_paths_ph: image_file_paths, data.labels_ph: labels, data.batch_size_ph: 1})
         return cnn.recognize()
 
     @staticmethod
@@ -312,5 +327,91 @@ class Cnn:
         converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
         tflite_model = converter.convert()
         open("converted_model.tflite", "wb").write(tflite_model)
+
+    # @staticmethod
+    # # https: // stackoverflow.com / questions / 33759623 / tensorflow - how - to - save - restore - a - model
+    # def save_model2(graph, data, sess):
+    #
+    #     # --- Saving model
+    #     logger.info('Saving model...')
+    #     saved_model_dir = os.getcwd() + os.sep + 'savedModel'
+    #     # delete the model directory
+    #     if (path.exists('savedModel')):
+    #         try:
+    #             shutil.rmtree(saved_model_dir)
+    #         except OSError as e:
+    #             print("Error: %s : %s" % (saved_model_dir, e.strerror))
+    #     builder = tf.saved_model.builder.SavedModelBuilder(saved_model_dir)
+    #
+    #     tensor_info_images = tf.saved_model.utils.build_tensor_info(data.images_ph)
+    #     tensor_info_labels = tf.saved_model.utils.build_tensor_info(data.labels_ph)
+    #     tensor_info_batch_size = tf.saved_model.utils.build_tensor_info(data.batch_size_ph)
+    #
+    #     probability = graph.get_tensor_by_name('probability_and_index_op:0')
+    #     index = graph.get_tensor_by_name('probability_and_index_op:1')
+    #
+    #     probability1 = graph.get_tensor_by_name('predicted_probability_ts:0')
+    #     index1 = graph.get_tensor_by_name('predicted_index_ts:0')
+    #
+    #     tensor_info_x = tf.saved_model.utils.build_tensor_info(probability1)
+    #     tensor_info_y = tf.saved_model.utils.build_tensor_info(index1)
+    #
+    #     prediction_signature = (
+    #         tf.saved_model.signature_def_utils.build_signature_def(
+    #             inputs={"images_ph": tensor_info_images, "labels_ph": tensor_info_labels,
+    #                     "batch_size_ph": tensor_info_batch_size},
+    #             outputs={'probability': tensor_info_x, 'index': tensor_info_y},
+    #             method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME))
+    #
+    #     builder.add_meta_graph_and_variables(
+    #         sess, [tf.saved_model.tag_constants.SERVING],
+    #         signature_def_map={
+    #             tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+    #                 prediction_signature
+    #         },
+    #     )
+    #     builder.save()
+
+    # def recognize_image_with_model2(image_file_name):
+    #
+    #     print('Loading model...')
+    #     graph = tf.Graph()
+    #     with graph.as_default():
+    #         with tf.Session(graph=graph) as sess:
+    #             savedmodel_dir = os.getcwd() + os.sep + 'savedModel'
+    #             meta_graph_def = tf.saved_model.loader.load(sess, ["serve"], savedmodel_dir)
+    #
+    #             images_ph = graph.get_tensor_by_name('images_ph:0')
+    #             labels_ph = graph.get_tensor_by_name('labels_ph:0')
+    #             batch_size_ph = graph.get_tensor_by_name('batch_size_ph:0')
+    #
+    #             # initialize data
+    #             init_iterator_op = graph.get_operation_by_name('init_iterator_op')
+    #             image_file_paths = [image_file_name]
+    #             labels = numpy.array([0])
+    #             sess.run(init_iterator_op, feed_dict={images_ph: image_file_paths, labels_ph: labels, batch_size_ph: 1})
+    #
+    #             signature_key = tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY
+    #             signature = meta_graph_def.signature_def
+    #
+    #             probability_tensor_name = signature[signature_key].outputs['probability'].name
+    #             predicted_index_tensor_name = signature[signature_key].outputs['index'].name
+    #
+    #             predicted_probability_tf = sess.graph.get_tensor_by_name(probability_tensor_name)
+    #             predicted_index_tf = sess.graph.get_tensor_by_name(predicted_index_tensor_name)
+    #
+    #             keep_nodes_probabilities_ph = graph.get_tensor_by_name('keep_nodes_probabilities_ph:0')
+    #             is_training_ph = graph.get_tensor_by_name('is_training_ph:0')
+    #             top_k_ph = graph.get_tensor_by_name('top_k_ph:0')
+    #
+    #             predicted_probability, predicted_index = sess.run(
+    #                 [predicted_probability_tf, predicted_index_tf],
+    #                 feed_dict={keep_nodes_probabilities_ph: 1.0, is_training_ph: False, top_k_ph: 3})
+    #             cols, rows = predicted_index.shape
+    #             list_length = rows if (rows < 6) else 6
+    #             predicted_indexes2 = predicted_index[0, :list_length]
+    #             predicted_chars = [label_char_dico.get(index) for index in predicted_indexes2]
+    #             predicted_probabilities2 = ["%.1f" % (proba * 100) for proba in predicted_probability[0, :list_length]]
+    #     return predicted_chars, predicted_indexes2, predicted_probabilities2
 
 
