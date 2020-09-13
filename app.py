@@ -3,14 +3,14 @@ from flask import request
 import base64
 from PIL import Image
 from io import BytesIO
-import cnn
+import Cnn
 import numpy
 import utils
 import logging
 import json
 from Data import Data
 import tensorflow as tf
-from cnn import Cnn
+from Cnn import Cnn
 
 logger = logging.getLogger('app.py')
 logging.basicConfig(filename='webApp.log', level=logging.DEBUG)
