@@ -184,21 +184,16 @@ class Cnn:
         with tf.compat.v1.variable_scope("convolutional_layer"):
             # stride = 1
             conv3_1 = slim.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
-            #conv3_1 = tf.layers.conv2d(images, 64, [3, 3], 1, padding='SAME', scope='conv3_1')
             max_pool_1 = slim.max_pool2d(conv3_1, [2, 2], [2, 2], padding='SAME', scope='pool1')
 
             conv3_2 = slim.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
-            #conv3_2 = tf.layers.conv2d(max_pool_1, 128, [3, 3], padding='SAME', scope='conv3_2')
             max_pool_2 = slim.max_pool2d(conv3_2, [2, 2], [2, 2], padding='SAME', scope='pool2')
 
             conv3_3 = slim.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3_3')
-            #conv3_3 = tf.layers.conv2d(max_pool_2, 256, [3, 3], padding='SAME', scope='conv3_3')
             max_pool_3 = slim.max_pool2d(conv3_3, [2, 2], [2, 2], padding='SAME', scope='pool3')
 
             conv3_4 = slim.conv2d(max_pool_3, 512, [3, 3], padding='SAME', scope='conv3_4')
             conv3_5 = slim.conv2d(conv3_4, 512, [3, 3], padding='SAME', scope='conv3_5')
-            #conv3_4 = tf.layers.conv2d(max_pool_3, 512, [3, 3], padding='SAME', scope='conv3_4')
-            #conv3_5 = tf.layers.conv2d(conv3_4, 512, [3, 3], padding='SAME', scope='conv3_5')
             max_pool_4 = slim.max_pool2d(conv3_5, [2, 2], [2, 2], padding='SAME', scope='pool4')
 
         flatten = slim.flatten(max_pool_4)
