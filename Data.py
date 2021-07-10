@@ -3,7 +3,6 @@ import os
 import tensorflow as tf
 import utils
 import codecs
-import ImageDatasetGeneration
 from datetime import datetime
 
 class Data:
@@ -11,11 +10,12 @@ class Data:
     #ROOT='C:\Users\I-Tang\DATA\DEV\TENSORFLOW\OnlineHanziRecognizer_tf'
     ROOT ='E:\DEV\TENSORFLOW\OnlineHanziRecognizer_tf2'
     CHECKPOINT = ROOT + '\checkpoint'
-    DATA_ROOT_DIR = 'E:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'
+    DATA_ROOT_DIR = 'D:\CHINESE_CHARACTER_RECOGNIZER\CASIA\TEMP_GENERATED_DATASET'
     DATA_TRAINING = DATA_ROOT_DIR + '/training_light'
     DATA_TEST = DATA_ROOT_DIR + '/test_light'
     CHARSET_SIZE = 3755
     IMAGE_SIZE = 64
+    augmentation = True
 
     def __init__(self, random_flip_up_down=False, random_brightness=False, random_contrast=True):
 
@@ -26,6 +26,83 @@ class Data:
         self.random_brightness = random_brightness
         self.random_contrast = random_contrast
 
+    def _parse_function(self, filename):
+            # convert to grey
+            image = tf.io.read_file(filename)
+            image_grey = tf.image.convert_image_dtype(tf.image.decode_png(image, channels=1), tf.float32)
+            if self.augmentation:
+                image_grey = self.augment(image_grey)
+
+            # standardize the image size .
+            standard_size = tf.constant([Data.IMAGE_SIZE, Data.IMAGE_SIZE], dtype=tf.int32)
+            images = tf.image.resize(image_grey, standard_size)
+            return images
+
+    #@staticmethod
+    def prepare_data_for_training(self, data_dir, batch_size):
+
+        truncate_path = data_dir + os.sep + ('%05d' % Data.CHARSET_SIZE)  # display number with 5 leading 0
+        image_file_paths = []
+        for root, sub_folder, image_file_names in os.walk(data_dir):
+            if root < truncate_path:
+                image_file_paths += [os.path.join(root, image_file_name) for image_file_name in image_file_names]
+        random.shuffle(image_file_paths)
+        # the labels are the name of directories converted to int: {'00000', '00001', '00002', ...}
+        labels = []
+        for image_file_path in image_file_paths:
+            # images_dir_name example : '00000', '00001', '00002'
+            images_dir_name = image_file_path[len(data_dir) + 1:].split(os.sep)[0]
+            img_dir_name = int(images_dir_name)
+            labels.append(img_dir_name)
+        print("self.labels size: %d" % len(labels))
+        print("self.image_file_paths size: %d" % len(image_file_paths))
+        #return image_file_paths, labels
+
+        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(image_file_paths)
+        label_dataset = tf.data.Dataset.from_tensor_slices(labels)
+        image_file_path_dataset = image_file_path_dataset.map(lambda x: self._parse_function(x))
+        #label_dataset = label_dataset.batch(batch_size)
+        #image_file_path_dataset = image_file_path_dataset.batch(batch_size)
+
+        # zip the x and y training data together and shuffle, batch etc.
+        # Dataset.repeat() transformation with no arguments will repeat the input indefinitely.
+        # concatenates its arguments without signaling the end of one epoch and the beginning of the next epoch.
+        # Dataset.repeat().batch() will yield batches that straddle epoch boundaries:
+        dataset = tf.compat.v1.data.Dataset.zip((image_file_path_dataset, label_dataset)) \
+            .shuffle(500) \
+            .repeat() \
+            .batch(batch_size)
+        return dataset
+
+    # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
+    def get_batch(self, aug=False):
+
+        def _parse_function(filename):
+            # convert to grey
+            image = tf.io.read_file(filename)
+            image_grey = tf.image.convert_image_dtype(tf.image.decode_png(image, channels=1), tf.float32)
+            if aug:
+                image_grey = self.augment(self, image_grey)
+
+            # standardize the image size .
+            standard_size = tf.constant([Data.IMAGE_SIZE, Data.IMAGE_SIZE], dtype=tf.int32)
+            images = tf.image.resize(image_grey, standard_size)
+            return images
+
+        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.image_paths_ph)
+        label_dataset = tf.data.Dataset.from_tensor_slices(self.labels_ph)
+        image_file_path_dataset = image_file_path_dataset.map(_parse_function)
+
+        # zip the x and y training data together and shuffle, batch etc.
+        dataset = tf.compat.v1.data.Dataset.zip((image_file_path_dataset, label_dataset)) \
+            .shuffle(500) \
+            .repeat() \
+            .batch(self.batch_size_ph)
+
+        self.iterator = tf.compat.v1.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
+        init_iterator_op = self.iterator.make_initializer(dataset, name='init_iterator_op') # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
+        return init_iterator_op
+
     @staticmethod
     def get_label_char_dico(file):
 
@@ -34,9 +111,8 @@ class Data:
         label_char_dico = Data.get_label_char_map(char_label_dictionary)
         return label_char_dico
 
-
-    @staticmethod
-    def augmentation(self, images):
+    #@staticmethod
+    def augment(self, images):
 
         if self.random_brightness:
             images = tf.image.random_brightness(images, max_delta=0.3)
@@ -54,64 +130,9 @@ class Data:
     def size(self):
         return len(self.labels)
 
-    # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
-    def get_batch(self, aug=False):
-
-        def _parse_function(filename):
-            # convert to grey
-            image = tf.io.read_file(filename)
-            image_grey = tf.image.convert_image_dtype(tf.image.decode_png(image, channels=1), tf.float32)
-            if aug:
-                image_grey = self.augmentation(self, image_grey)
-
-            # standardize the image size .
-            standard_size = tf.constant([Data.IMAGE_SIZE, Data.IMAGE_SIZE], dtype=tf.int32)
-            images = tf.image.resize(image_grey, standard_size)
-            return images
-
-        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.image_paths_ph)
-        label_dataset = tf.data.Dataset.from_tensor_slices(self.labels_ph)
-        image_file_path_dataset = image_file_path_dataset.map(_parse_function)
-
-        # zip the x and y training data together and shuffle, batch etc.
-        dataset = tf.compat.v1.data.Dataset.zip((image_file_path_dataset, label_dataset)).shuffle(500).repeat().batch(self.batch_size_ph)
-
-        self.iterator = tf.compat.v1.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
-        init_iterator_op = self.iterator.make_initializer(dataset, name='init_iterator_op') # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
-        return init_iterator_op
-
-    def get_batch2(self, aug=False):
-
-        def _parse_function(filename):
-            # convert to grey
-            image = tf.io.read_file(filename)
-            image_grey = tf.image.convert_image_dtype(tf.image.decode_png(image, channels=1), tf.float32)
-            if aug:
-                image_grey = self.augmentation(self, image_grey)
-
-            # standardize the image size .
-            standard_size = tf.constant([Data.IMAGE_SIZE, Data.IMAGE_SIZE], dtype=tf.int32)
-            images = tf.image.resize(image_grey, standard_size)
-            return images
-
-        image_file_path_dataset = tf.data.Dataset.from_tensor_slices(self.image_paths_ph)
-        label_dataset = tf.data.Dataset.from_tensor_slices(self.labels_ph)
-        image_file_path_dataset = image_file_path_dataset.map(_parse_function)
-
-        # zip the x and y training data together and shuffle, batch etc.
-        dataset = tf.data.Dataset.zip((image_file_path_dataset, label_dataset)).shuffle(500).repeat().batch(self.batch_size_ph)
-
-        self.iterator = tf.compat.v1.data.Iterator.from_structure(dataset.output_types, dataset.output_shapes)
-        #init_iterator_operation = self.iterator.make_initializer(dataset, name='dataset_init') # returns a `tf.Operation` that can be run to initialize this iterator on the dataset
-        return self.iterator, dataset
-
     def get_next_element(self):
         next_element = self.iterator.get_next()
         return next_element
-
-# def get_dataset_init_op(self):
-#     dataset_init_op = self.iterator.make_initializer(dataset, name='dataset_init')
-#     return dataset_init_op
 
     def load_char_label_dico(filePath):
 
@@ -127,22 +148,3 @@ class Data:
                 charLabelMap[char] = label
         print("Execution time: %s s." % utils.r(start_time))
         return charLabelMap
-
-    @staticmethod
-    def prepare_data_for_training(data_dir, ):
-
-        truncate_path = data_dir + os.sep + ('%05d' % Data.CHARSET_SIZE)  # display number with 5 leading 0
-        image_file_paths = []
-        for root, sub_folder, image_file_names in os.walk(data_dir):
-            if root < truncate_path:
-                image_file_paths += [os.path.join(root, image_file_name) for image_file_name in image_file_names]
-        random.shuffle(image_file_paths)
-        # the labels are the name of directories converted to int: {'00000', '00001', '00002', ...}
-        labels = []
-        for image_file_path in image_file_paths:
-            # images_dir_name example : '00000', '00001', '00002'
-            images_dir_name = image_file_path[len(data_dir) + 1:].split(os.sep)[0]
-            img_dir_name = int(images_dir_name)
-            labels.append(img_dir_name)
-        print("self.labels size: %d" % len(labels))
-        return image_file_paths, labels

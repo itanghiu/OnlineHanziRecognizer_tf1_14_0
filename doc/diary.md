@@ -1,6 +1,13 @@
 
 # DIARY
 
+#2020-11-20
+premiere execution de hanzirecog tf2 avec loss="categorical_crossentropy"
+La valeur du loss est bien trop elevé: 188 000 au debut et ne baisse pas apres.
+Je vais essayer de remplacer le loss par le custom loss utilisé dans hazirecog tf1.
+cf: hands-on with sci-kit chap 12 custom loss function
+
+
 ## 2020-10-09
 PROBLEM: After having converted Data.py to tf2 using the tf_upgrade_v2 script I got :
 AttributeError: 'BatchDataset' object has no attribute 'output_types'

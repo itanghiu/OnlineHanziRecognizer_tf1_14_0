@@ -80,7 +80,7 @@ This network uses :
  - 4 max pooling layers of size 2x2 and stride=2
  - 2 fully connected layers
 
-This architecture seems to be a good compromise as adding additional covolutional layers only brings marginal gains. 
+This architecture seems to be a good compromise as adding additional convolutional layers only brings marginal gains. 
 
 #### Learning Rate Scheduling
 

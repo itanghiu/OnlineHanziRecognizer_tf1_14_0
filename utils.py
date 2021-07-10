@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 from datetime import datetime
 
-HAND_WRITTEN_CHAR_FILE_NAME = 'onlineCharacter.png'
+HAND_WRITTEN_CHAR_FILE_NAME = 'images/onlineCharacter.png'
 
 # image is a png image
 # returns a png image
